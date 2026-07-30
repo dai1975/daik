@@ -1,0 +1,30 @@
+# First milestone
+
+`daik` の最初のマイルストーンでは、Issue tracker と coding agent を接続する
+ための最小構成を実装する。
+
+## Scope
+
+- [ ] `daik init`
+- [ ] テンプレート一式
+- [ ] manifest によるファイル所有権管理
+- [ ] workflow/config validator
+- [ ] `daik doctor`
+- [ ] GitHub Issues tracker adapter
+- [ ] Issue ごとの workspace と Git worktree の管理
+- [ ] coding agent runner
+- [ ] polling、並行実行、再試行
+- [ ] structured logging と status 表示
+
+## Completion criteria
+
+- 開発 workspace のルートで `daik init <primary-repository>` を実行できる
+- `AGENTS.md` を作成、変更、上書きしない
+- `.agents/` に workflow、設定、skills、導入記録を展開できる
+- 既存のユーザー所有ファイルを上書きしない
+- GitHub Issues から実行可能な Issue を取得できる
+- Issue ごとに `workspaces/` 以下へ隔離された作業場所を作成できる
+- coding agent を起動し、workflow に従って Issue を処理できる
+- 同時実行数の制限、再試行、停止を扱える
+- 実行状況と失敗理由をログまたは status コマンドで確認できる
+
