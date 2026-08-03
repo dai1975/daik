@@ -1,0 +1,627 @@
+#!/usr/bin/env python3
+"""daik: issue-driven coding-agent workspace tools."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+from typing import Any, Final
+
+
+VERSION: Final = "0.2.0"
+BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
+PACK_FILE: Final = "pack.yaml"
+
+
+class DaikError(Exception):
+    """Expected command-line error."""
+
+
+@dataclass(frozen=True)
+class Pack:
+    path: Path
+    data: dict[str, Any]
+
+    @property
+    def id(self) -> str:
+        return require_string(self.data, "id", self.path)
+
+    @property
+    def kind(self) -> str:
+        return require_string(self.data, "kind", self.path)
+
+    @property
+    def key(self) -> str:
+        value = self.data.get("key")
+        return value if isinstance(value, str) else self.id.rsplit(".", 1)[-1]
+
+
+def parse_scalar(value: str, source: Path, line_number: int) -> Any:
+    if not value:
+        return None
+    if value.startswith('"'):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise DaikError(f"{source}:{line_number}: invalid quoted value") from error
+    if value.startswith("'"):
+        if not value.endswith("'") or len(value) < 2:
+            raise DaikError(f"{source}:{line_number}: invalid quoted value")
+        return value[1:-1].replace("''", "'")
+    if value in {"true", "false"}:
+        return value == "true"
+    if value in {"null", "~"}:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def parse_yaml_subset(path: Path) -> dict[str, Any]:
+    """Parse the dependency-free YAML subset used by daik pack manifests."""
+    logical_lines: list[tuple[int, int, str]] = []
+    for line_number, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if "\t" in raw_line:
+            raise DaikError(f"{path}:{line_number}: tabs are not allowed")
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        logical_lines.append((line_number, indent, raw_line[indent:]))
+
+    if not logical_lines:
+        raise DaikError(f"empty pack manifest: {path}")
+
+    def parse_block(index: int, indent: int) -> tuple[Any, int]:
+        if index >= len(logical_lines):
+            return {}, index
+        is_list = logical_lines[index][2].startswith("- ")
+        result: Any = [] if is_list else {}
+
+        while index < len(logical_lines):
+            line_number, current_indent, text = logical_lines[index]
+            if current_indent < indent:
+                break
+            if current_indent > indent:
+                raise DaikError(f"{path}:{line_number}: unexpected indentation")
+
+            if is_list:
+                if not text.startswith("- "):
+                    raise DaikError(f"{path}:{line_number}: mixed list and mapping")
+                item = text[2:].strip()
+                if not item or ":" in item:
+                    raise DaikError(
+                        f"{path}:{line_number}: pack lists must contain scalar values"
+                    )
+                result.append(parse_scalar(item, path, line_number))
+                index += 1
+                continue
+
+            if text.startswith("- ") or ":" not in text:
+                raise DaikError(f"{path}:{line_number}: expected a mapping entry")
+            key, raw_value = text.split(":", 1)
+            key = key.strip()
+            if not key or key in result:
+                raise DaikError(f"{path}:{line_number}: invalid or duplicate key")
+            raw_value = raw_value.strip()
+            index += 1
+            if raw_value:
+                result[key] = parse_scalar(raw_value, path, line_number)
+            elif index < len(logical_lines) and logical_lines[index][1] > indent:
+                child_indent = logical_lines[index][1]
+                result[key], index = parse_block(index, child_indent)
+            else:
+                result[key] = {}
+        return result, index
+
+    parsed, final_index = parse_block(0, logical_lines[0][1])
+    if final_index != len(logical_lines) or not isinstance(parsed, dict):
+        raise DaikError(f"pack manifest root must be a mapping: {path}")
+    return parsed
+
+
+def require_string(data: dict[str, Any], key: str, source: Path) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise DaikError(f"{source}: {key} must be a non-empty string")
+    return value
+
+
+def string_list(data: dict[str, Any], key: str, source: Path) -> list[str]:
+    value = data.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise DaikError(f"{source}: {key} must be a list of strings")
+    return value
+
+
+def mapping(data: dict[str, Any], key: str, source: Path) -> dict[str, Any]:
+    value = data.get(key, {})
+    if not isinstance(value, dict):
+        raise DaikError(f"{source}: {key} must be a mapping")
+    return value
+
+
+def validate_pack(pack: Pack) -> None:
+    if pack.data.get("schema_version") != 1:
+        raise DaikError(f"{pack.path}: unsupported schema_version")
+    if pack.kind not in {"base", "workflow", "tracker"}:
+        raise DaikError(f"{pack.path}: unsupported pack kind: {pack.kind}")
+    if not isinstance(pack.data.get("version"), int):
+        raise DaikError(f"{pack.path}: version must be an integer")
+    languages = string_list(pack.data, "languages", pack.path)
+    if not languages:
+        raise DaikError(f"{pack.path}: languages must not be empty")
+    string_list(pack.data, "requires", pack.path)
+    string_list(pack.data, "provides", pack.path)
+    phases = string_list(pack.data, "phases", pack.path)
+    if pack.kind == "workflow" and not phases:
+        raise DaikError(f"{pack.path}: workflow phases must not be empty")
+    mapping(pack.data, "contributions", pack.path)
+    mapping(pack.data, "files_user", pack.path)
+    mapping(pack.data, "files_daik", pack.path)
+    daik_config = pack.data.get("daik_config")
+    if daik_config is not None and not isinstance(daik_config, str):
+        raise DaikError(f"{pack.path}: daik_config must be a path string")
+
+
+def template_roots(extra_roots: list[str]) -> list[Path]:
+    roots = [BUILTIN_TEMPLATES]
+    roots.extend(Path(value).expanduser().resolve() for value in extra_roots)
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved in seen:
+            continue
+        if not resolved.is_dir():
+            raise DaikError(f"template directory is not a directory: {resolved}")
+        seen.add(resolved)
+        unique.append(resolved)
+    return unique
+
+
+def discover_packs(roots: list[Path]) -> dict[str, Pack]:
+    packs: dict[str, Pack] = {}
+    for root in roots:
+        for manifest in sorted(root.rglob(PACK_FILE)):
+            relative_parts = manifest.relative_to(root).parts
+            if any(part == ".git" or part.startswith(".") for part in relative_parts):
+                continue
+            pack = Pack(manifest.parent.resolve(), parse_yaml_subset(manifest))
+            validate_pack(pack)
+            if pack.id in packs:
+                raise DaikError(
+                    f"duplicate pack id {pack.id}: {packs[pack.id].path} and {pack.path}"
+                )
+            packs[pack.id] = pack
+    if not packs:
+        raise DaikError("no daik packs found")
+    return packs
+
+
+def select_pack(packs: dict[str, Pack], kind: str, selector: str) -> Pack:
+    candidates = [
+        pack
+        for pack in packs.values()
+        if pack.kind == kind and selector in {pack.id, pack.key}
+    ]
+    if not candidates:
+        available = ", ".join(sorted(pack.key for pack in packs.values() if pack.kind == kind))
+        raise DaikError(f"unknown {kind} pack {selector!r}; available: {available or '(none)'}")
+    if len(candidates) > 1:
+        ids = ", ".join(sorted(pack.id for pack in candidates))
+        raise DaikError(f"ambiguous {kind} pack {selector!r}; use one of: {ids}")
+    return candidates[0]
+
+
+def localized_name(pack: Pack, language: str) -> str:
+    names = mapping(pack.data, "name", pack.path)
+    value = names.get(language, names.get("en", pack.key))
+    return value if isinstance(value, str) else pack.key
+
+
+def localized_file(pack: Pack, values: Any, language: str, label: str) -> Path:
+    if not isinstance(values, dict):
+        raise DaikError(f"{pack.path}: {label} must map languages to files")
+    selected_language = language if language in values else "en"
+    if selected_language not in values:
+        raise DaikError(f"{pack.path}: {label} has no {language} or en variant")
+    if selected_language != language:
+        print(f"Warning: {pack.id} has no {language} {label}; using English", file=sys.stderr)
+    relative = values[selected_language]
+    if not isinstance(relative, str):
+        raise DaikError(f"{pack.path}: {label}.{selected_language} must be a path")
+    return safe_pack_source(pack, relative)
+
+
+def safe_pack_source(pack: Pack, relative_name: str) -> Path:
+    relative = Path(relative_name)
+    if relative.is_absolute():
+        raise DaikError(f"{pack.path}: source path must be relative: {relative_name}")
+    resolved = (pack.path / relative).resolve()
+    try:
+        resolved.relative_to(pack.path)
+    except ValueError as error:
+        raise DaikError(f"{pack.path}: source escapes pack: {relative_name}") from error
+    if not resolved.is_file():
+        raise DaikError(f"{pack.path}: source file not found: {relative_name}")
+    return resolved
+
+
+def safe_target_name(relative_name: str, source: Path) -> str:
+    relative = Path(relative_name)
+    if relative.is_absolute() or ".." in relative.parts or relative == Path("."):
+        raise DaikError(f"{source}: invalid target path: {relative_name}")
+    return relative.as_posix()
+
+
+def read_contributions(packs: list[Pack], slot: str, language: str) -> list[str]:
+    contents: list[str] = []
+    for pack in packs:
+        contributions = mapping(pack.data, "contributions", pack.path)
+        if slot not in contributions:
+            continue
+        source = localized_file(pack, contributions[slot], language, f"contributions.{slot}")
+        contents.append(source.read_text(encoding="utf-8").strip())
+    return [content for content in contents if content]
+
+
+def read_static_files(packs: list[Pack]) -> dict[str, tuple[str, str]]:
+    files: dict[str, tuple[str, str]] = {}
+    for pack in packs:
+        for manifest_key, owner in (("files_user", "user"), ("files_daik", "daik")):
+            entries = mapping(pack.data, manifest_key, pack.path)
+            for source_name, target_name in entries.items():
+                if not isinstance(target_name, str):
+                    raise DaikError(f"{pack.path}: {manifest_key} targets must be strings")
+                source = safe_pack_source(pack, source_name)
+                target = safe_target_name(target_name, pack.path)
+                content = source.read_text(encoding="utf-8")
+                if target in files and files[target][1] != content:
+                    raise DaikError(f"selected packs provide conflicting target: {target}")
+                files[target] = (owner, content)
+    return files
+
+
+def read_daik_config(packs: list[Pack]) -> str:
+    fragments: list[str] = []
+    for pack in packs:
+        source_name = pack.data.get("daik_config")
+        if source_name is None:
+            continue
+        source = safe_pack_source(pack, source_name)
+        content = source.read_text(encoding="utf-8").strip()
+        if content:
+            fragments.append(content)
+    if not fragments:
+        raise DaikError("selected packs do not provide daik configuration")
+    return "\n\n".join(fragments) + "\n"
+
+
+def sha256_text(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.replace(path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def safe_workspace_target(root: Path, relative_name: str) -> Path:
+    relative = Path(safe_target_name(relative_name, root))
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise DaikError(f"target path contains a symlink: {relative_name}")
+    return root / relative
+
+
+def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str, str]]:
+    templates = read_static_files(selected)
+    templates[".agents/daik-config.yaml"] = ("user", read_daik_config(selected))
+    agents_parts = read_contributions(selected, "agents", language)
+    workflow_parts = read_contributions(selected, "workflow", language)
+    tracker_parts = read_contributions(selected, "tracker", language)
+    internal_parts = read_contributions(selected, "internal", language)
+    if not agents_parts:
+        raise DaikError("selected packs do not provide AGENTS.md instructions")
+    if not workflow_parts:
+        raise DaikError("selected packs do not provide a workflow")
+    if not tracker_parts:
+        raise DaikError("selected packs do not provide tracker instructions")
+    if not internal_parts:
+        raise DaikError("selected packs do not provide internal-area instructions")
+
+    templates[".daik/daik-AGENTS.md.template"] = (
+        "daik",
+        "\n\n".join(agents_parts).rstrip() + "\n",
+    )
+    templates[".daik/AGENTS.md"] = (
+        "daik",
+        "\n\n".join(internal_parts).rstrip() + "\n",
+    )
+    workflow = selected[1]
+    tracker = selected[2]
+    phases = string_list(workflow.data, "phases", workflow.path)
+    actions = string_list(workflow.data, "requires", workflow.path)
+    workflow_header_lines = [
+        "---",
+        "daik:",
+        "  schema_version: 1",
+        "  artifact: workflow",
+        "  ownership: user",
+        "  user_action: review-and-customize",
+        f"  language: {json.dumps(language)}",
+        f"  workflow_pack: {json.dumps(workflow.id)}",
+        f"  tracker_pack: {json.dumps(tracker.id)}",
+        '  tracker_instructions: ".agents/daik-tracker.md"',
+        "  phases:",
+        *(f"    - {json.dumps(phase)}" for phase in phases),
+        "  issue_actions:",
+        *(f"    - {json.dumps(action)}" for action in actions),
+        "---",
+        "",
+    ]
+    workflow_header = "\n".join(workflow_header_lines) + "\n"
+    templates[".agents/daik-workflow.md"] = (
+        "user",
+        workflow_header + "\n\n".join(workflow_parts).rstrip() + "\n",
+    )
+    tracker_actions = string_list(tracker.data, "provides", tracker.path)
+    tracker_header_lines = [
+        "---",
+        "daik:",
+        "  schema_version: 1",
+        "  artifact: tracker",
+        "  ownership: user",
+        "  user_action: review-and-customize",
+        f"  language: {json.dumps(language)}",
+        f"  tracker_pack: {json.dumps(tracker.id)}",
+        "  provides:",
+        *(f"    - {json.dumps(action)}" for action in tracker_actions),
+        "---",
+        "",
+    ]
+    tracker_header = "\n".join(tracker_header_lines) + "\n"
+    templates[".agents/daik-tracker.md"] = (
+        "user",
+        tracker_header + "\n\n".join(tracker_parts).rstrip() + "\n",
+    )
+    return templates
+
+
+def check_existing_selection(root: Path, selected: list[Pack], language: str) -> None:
+    manifest_path = safe_workspace_target(root, ".daik/manifest.json")
+    if not manifest_path.exists():
+        return
+    if not manifest_path.is_file():
+        raise DaikError("expected a file but found another file type: .daik/manifest.json")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        previous_ids = [item["id"] for item in manifest["packs"]]
+        previous_language = manifest["language"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise DaikError("cannot read pack selection from .daik/manifest.json") from error
+    selected_ids = [pack.id for pack in selected]
+    if previous_ids != selected_ids or previous_language != language:
+        raise DaikError(
+            "site is already initialized with a different language or pack selection; "
+            "daik does not replace user-owned files"
+        )
+
+
+def init_workspace(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"workspace root is not a directory: {root}")
+
+    packs = discover_packs(template_roots(args.template_dir))
+    selected = [
+        select_pack(packs, "base", args.base),
+        select_pack(packs, "workflow", args.workflow),
+        select_pack(packs, "tracker", args.tracker),
+    ]
+    workflow, tracker = selected[1], selected[2]
+    missing = sorted(
+        set(string_list(workflow.data, "requires", workflow.path))
+        - set(string_list(tracker.data, "provides", tracker.path))
+    )
+    if missing:
+        raise DaikError(
+            f"workflow {workflow.id} requires capabilities not provided by "
+            f"{tracker.id}: {', '.join(missing)}"
+        )
+
+    if args.wet_run:
+        check_existing_selection(root, selected, args.lang)
+    templates = build_templates(selected, args.lang)
+    records: dict[str, dict[str, str]] = {}
+    created: list[str] = []
+    existing: list[str] = []
+    pending_writes: list[tuple[Path, str]] = []
+
+    for relative_name, (owner, content) in sorted(templates.items()):
+        target = safe_workspace_target(root, relative_name)
+        template_hash = sha256_text(content)
+        if target.exists():
+            if not target.is_file():
+                raise DaikError(f"expected a file but found another file type: {relative_name}")
+            existing.append(relative_name)
+            current_hash = sha256_file(target)
+            state = "unchanged" if current_hash == template_hash else "modified"
+        else:
+            created.append(relative_name)
+            current_hash = template_hash
+            state = "created"
+            pending_writes.append((target, content))
+        records[relative_name] = {
+            "owner": owner,
+            "state": state,
+            "template_sha256": template_hash,
+            "current_sha256": current_hash,
+        }
+
+    workspaces = safe_workspace_target(root, "workspaces")
+    if workspaces.exists() and not workspaces.is_dir():
+        raise DaikError("expected a directory but found another file type: workspaces")
+    workspace_created = not workspaces.exists()
+
+    manifest_name = ".daik/manifest.json"
+    manifest = {
+        "schema_version": 1,
+        "tool": "daik",
+        "tool_version": VERSION,
+        "document": {
+            "artifact": "manifest",
+            "ownership": "daik",
+            "user_action": "none",
+        },
+        "language": args.lang,
+        "packs": [
+            {
+                "id": pack.id,
+                "kind": pack.kind,
+                "version": pack.data["version"],
+                "source": str(pack.path),
+            }
+            for pack in selected
+        ],
+        "files": records,
+    }
+    manifest_content = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    manifest_path = safe_workspace_target(root, manifest_name)
+    manifest_existed = manifest_path.exists()
+    if manifest_existed and not manifest_path.is_file():
+        raise DaikError(f"expected a file but found another file type: {manifest_name}")
+    if args.wet_run:
+        for target, content in pending_writes:
+            atomic_write(target, content)
+        if workspace_created:
+            workspaces.mkdir(parents=True)
+        atomic_write(manifest_path, manifest_content)
+
+    print("Selected packs:")
+    for pack in selected:
+        print(f"  {pack.kind}: {pack.id}")
+    action = "Created" if args.wet_run else "Would create"
+    for relative_name in created:
+        print(f"{action}: {relative_name}")
+    for relative_name in existing:
+        print(f"Kept: {relative_name}")
+    print(f"{action}: workspaces/" if workspace_created else "Kept: workspaces/")
+    if args.wet_run:
+        print(f"{'Updated' if manifest_existed else 'Created'}: {manifest_name}")
+    else:
+        print(f"Would write: {manifest_name}")
+    print("Not modified: AGENTS.md")
+    if not args.wet_run:
+        print("Preview only: run again with --wet-run to apply these changes")
+    else:
+        print("Next: copy the tagged block from .daik/daik-AGENTS.md.template to AGENTS.md")
+    if args.wet_run:
+        print("Next: replace <<DAIK:WORKSPACE_GUIDE>> in the copied AGENTS.md block")
+        print("Next: review .agents/daik-config.yaml")
+        print("Next: review .agents/daik-workflow.md")
+        print("Next: review .agents/daik-tracker.md and replace <<DAIK:TRACKER_TOOL>>")
+    return 0
+
+
+def list_packs(args: argparse.Namespace) -> int:
+    packs = discover_packs(template_roots(args.template_dir))
+    for kind in ("base", "workflow", "tracker"):
+        print(f"{kind}:")
+        candidates = sorted(
+            (pack for pack in packs.values() if pack.kind == kind), key=lambda pack: pack.id
+        )
+        for pack in candidates:
+            languages = ",".join(string_list(pack.data, "languages", pack.path))
+            print(f"  {pack.id} ({languages}) - {localized_name(pack, args.lang)}")
+    return 0
+
+
+def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--template-dir",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="additional directory to search recursively for pack.yaml (repeatable)",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="daik", description="Issue-driven coding-agent workspace tools."
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    site_parser = subparsers.add_parser("site", help="manage a development workspace")
+    site_subparsers = site_parser.add_subparsers(dest="site_command", required=True)
+
+    init_parser = site_subparsers.add_parser(
+        "init", help="initialize the current development workspace from packs"
+    )
+    init_parser.add_argument("--root", default=".", help="workspace root (default: current directory)")
+    init_parser.add_argument("--lang", choices=("ja", "en"), default="ja")
+    init_parser.add_argument("--base", default="default", help=argparse.SUPPRESS)
+    init_parser.add_argument("--workflow", default="standard", metavar="PACK")
+    init_parser.add_argument("--tracker", default="github-issues", metavar="PACK")
+    init_parser.add_argument(
+        "--wet-run",
+        action="store_true",
+        help="write the previewed files (the default is preview-only)",
+    )
+    add_template_dir_argument(init_parser)
+    init_parser.set_defaults(handler=init_workspace)
+
+    packs_parser = site_subparsers.add_parser("packs", help="list available packs")
+    packs_parser.add_argument("--lang", choices=("ja", "en"), default="ja")
+    add_template_dir_argument(packs_parser)
+    packs_parser.set_defaults(handler=list_packs)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return args.handler(args)
+    except DaikError as error:
+        parser.error(str(error))
+    except OSError as error:
+        parser.error(str(error))
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

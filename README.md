@@ -1,127 +1,214 @@
 # daik
 
-`daik` は、Issue tracker と coding agent をつなぐ、個人開発向けの協調ハーネスです。
+[日本語](README.ja.md)
 
-Issue を仕事の単位として取得し、Issue ごとに隔離された workspace を用意して
-coding agent を実行します。開発プロセスや agent のスキルはプロジェクト側へ
-展開され、ユーザーが自分の開発環境に合わせて自由に変更できます。
+`daik` is a collaboration harness for personal development that connects issue
+trackers with coding agents.
 
-名前は日本語の「大工」に由来します。また、作者の名前である `dai` を含む、
-個人的な道具という意味も込めています。
+It takes issues as units of work, prepares an isolated workspace for each issue,
+and runs coding agents. Development processes and tracker-operation instructions
+are deployed into the user's development environment, where they can be freely
+customized.
+
+The name comes from 大工, the Japanese word for carpenter.
 
 > [!NOTE]
-> 現在は設計・開発の初期段階です。以下には実装予定のインターフェースが
-> 含まれます。
+> daik is currently in an early stage of development. The `init` command can
+> deploy the required files; issue-tracker integration and agent execution will
+> be implemented later.
 
 ## Goals
 
-- Issue tracker を coding agent の作業キューとして利用する
-- Issue ごとに独立した workspace を作り、複数の agent を安全に並行実行する
-- 開発プロセスと agent の指示を、プロジェクト内でバージョン管理する
-- 単一リポジトリだけでなく、複数リポジトリや外部資料を含む開発に対応する
-- 生成された設定をユーザーが所有し、プロジェクトごとに変更できるようにする
-- 特定の coding agent や Issue tracker への依存を小さくする
+- Use an issue tracker as a work queue for coding agents
+- Create an independent workspace for each issue and run multiple agents safely
+  in parallel
+- Version development processes and agent instructions in the development
+  environment
+- Support development involving multiple repositories and external reference
+  material, not only a single repository
+- Let users own generated configuration and customize it for each environment
+- Minimize dependencies on any particular coding agent or issue tracker
 
-`daik` は汎用ワークフローエンジンや、リポジトリ配置を規定するプロジェクト
-管理ツールを目指しません。各リポジトリ、設計資料、その他のリソースをどこに
-置くかはユーザーが決めます。
+daik is not intended to be a general-purpose workflow engine or a project
+management tool that dictates repository layout. Users decide where to place
+repositories, design documents, and other resources.
 
-## Inspiration
+## Usage
 
-`daik` は [OpenAI Symphony](https://github.com/openai/symphony) の、
-Issue tracker を監視して Issue ごとの workspace で coding agent を動かす
-設計を参考にしています。
+A directory that serves as the coding agent's root and collects repositories,
+documents, and other development resources is called a **site**.
 
-Symphony が定義する scheduler、tracker adapter、workspace manager、agent
-runner の責務分離を参考にしつつ、`daik` では個人の開発 workspace に展開して
-直接編集できる設定、workflow、skills を重視します。
-
-## Planned usage
-
-まず、`daik` と作業対象のリポジトリを同じ開発ディレクトリに配置します。
+First, create a site and place daik, the repositories being developed, and
+resources outside those repositories inside it. The following example uses
+separate backend and frontend repositories.
 
 ```sh
-mkdir my-project
-cd my-project
+mkdir my-site
+cd my-site
 
 git clone git@github.com:dai1975/daik
-git clone git@github.com:user/userproj
+git clone git@github.com:user/backend
+git clone git@github.com:user/frontend
 
-daik/daik init userproj
+mkdir -p resources ref/rfc
 ```
 
-`daik` の実行場所は `userproj/` の中ではなく、その親の `my-project/` です。
-これにより、agent は複数のリポジトリやリポジトリ外の資料を同じ workspace
-から参照できます。
+Workflows and trackers are distributed in units called **packs**. List the
+available packs with:
 
-リソースの配置に決められた形はありません。
+```sh
+./daik/daik site packs
+```
+
+Initialize the site by selecting a natural language, workflow pack, and tracker
+pack.
+
+```sh
+./daik/daik site init \
+  --lang en \
+  --workflow standard \
+  --tracker github-issues \
+  --wet-run
+```
+
+Without `--wet-run`, the command only previews its changes and does not write
+any files.
+
+```sh
+./daik/daik site init
+```
+
+`site init` never overwrites existing files, so it is safe to run again with
+the same pack selection. If a different language or pack selection is requested
+for an initialized site, daik stops to avoid making the manifest inconsistent
+with user-owned files.
+
+Run daik from the `my-site/` root, not from `backend/` or `frontend/`. Resource
+layout is otherwise unrestricted.
 
 ```text
-my-project/
+my-site/
 ├── AGENTS.md
 ├── .agents/
+├── .daik/
 ├── workspaces/
-├── userproj/
-├── another-repository/
-├── specifications/
-└── research-notes/
+├── backend/                  # Git repository
+├── frontend/                 # Git repository
+├── resources/                # Images and other files not stored on GitHub
+└── ref/
+    └── rfc/                  # Reference documents and standards
 ```
 
-それぞれのディレクトリの目的、ビルドやテストの方法、agent が編集してよい
-範囲などは、ユーザーが `AGENTS.md` またはそこから参照する文書に記述します。
+Describe the purpose of each directory, build and test commands, and areas that
+agents may edit in `AGENTS.md` or in documents linked from it.
 
-## Workspace contract
+### Commands
 
-`daik` が名前と役割を規定するのは、次の要素だけです。
+Commands currently available:
+
+```sh
+daik site packs
+daik site init
+```
+
+- `site packs`: list available packs
+- `site init`: preview deployment; write files only when `--wet-run` is supplied
+
+Display help with:
+
+```sh
+./daik/daik --help
+./daik/daik site init --help
+```
+
+The following commands are planned:
+
+```sh
+daik site validate
+daik site doctor
+daik work run
+daik work watch
+daik work status
+```
+
+- `site validate`: validate the workflow and configuration files
+- `site doctor`: diagnose Git, coding-agent, and tracker-authentication setup
+- `work run`: fetch and process eligible issues
+- `work watch`: continuously monitor the issue tracker
+- `work status`: show running, retrying, and completed work
+
+## Site
+
+A **site** is the root directory in which coding agents work. It is not a single
+Git repository. It is a container for multiple repositories related to one
+development effort, material and resources outside those repositories, daik
+configuration, and per-issue workspaces. A coding agent's current working
+directory is also the site root.
+
+daik does not prescribe where repositories and documents are placed within a
+site. Explain the layout and writable areas to agents in the root `AGENTS.md` or
+in documents linked from it.
+
+The site directory itself may be managed as a Git repository. In that case,
+site-wide `AGENTS.md` instructions, daik configuration, and shared documents can
+be versioned there. Repositories inside the site may be submodules or excluded
+by the site's `.gitignore`.
+
+### Site contract
+
+daik reserves names and roles only for the following elements:
 
 ```text
-my-project/
+my-site/
 ├── AGENTS.md
 ├── .agents/
-│   ├── AGENTS.md.template
-│   ├── WORKFLOW.md
+│   ├── daik-workflow.md
+│   ├── daik-tracker.md
 │   ├── daik-config.yaml
-│   ├── daik-manifest.json
-│   ├── daik-workflow-spec.md
-│   └── skills/
-│       └── daik-issue-worker/
-│           └── SKILL.md
+│   └── daik-workflow-spec.md
+├── .daik/
+│   ├── .ignore
+│   ├── AGENTS.md
+│   ├── daik-AGENTS.md.template
+│   └── manifest.json
 └── workspaces/
 ```
 
-### `AGENTS.md`
+#### `AGENTS.md`
 
-開発 workspace 全体の説明と恒久的な開発ルールを記述します。
+This file describes the entire site and its permanent development rules.
 
-`AGENTS.md` は常にユーザー所有です。`daik` は作成、変更、上書きを行いません。
-代わりに、追加を推奨する内容を `.agents/AGENTS.md.template` として用意します。
-ユーザーは必要な部分だけを既存の `AGENTS.md` へコピーできます。
+`AGENTS.md` is always user-owned. daik never creates, changes, or overwrites it.
+Instead, daik writes suggested additions to
+`.daik/daik-AGENTS.md.template`. Copy only the section enclosed by
+`DAIK:COPY:BEGIN` and `DAIK:COPY:END` into the existing `AGENTS.md`, then
+replace `<<DAIK:WORKSPACE_GUIDE>>` with site-specific guidance. Explanations of
+the template itself and instructions for the user remain outside the copy block.
 
-### `.agents/WORKFLOW.md`
+#### `.agents/daik-workflow.md`
 
-Issue を受け取ってから作業を完了または人間へ引き渡すまでの開発プロセスを
-定義します。例えば、次のような手順が含まれます。
+This file defines the provider-independent development process from receiving
+an issue through completion or handoff to a human. Its front matter records the
+selected packs, phases, and required issue actions in a machine-readable form.
 
-1. Issue と関連資料を理解する
-2. 実装計画を作る
-3. 対象のコードを変更する
-4. テストと静的検査を実行する
-5. 変更内容をレビューする
-6. 結果と検証の証拠を Issue tracker へ報告する
-7. 次の状態へ引き渡す
+After `init` creates it, the user owns it and may adapt it to the site. Its file
+contract is defined in `.agents/daik-workflow-spec.md`. For the concrete
+implementation of tracker actions, it refers to `.agents/daik-tracker.md`.
 
-初回の `init` ではテンプレートが作成されますが、その後はユーザーが所有し、
-プロジェクトに合うように変更します。ファイル形式の契約は
-`.agents/daik-workflow-spec.md` に定義します。
+#### `.agents/daik-tracker.md`
 
-### `.agents/skills/`
+This file defines how issue actions requested by the workflow are implemented
+on the selected tracker. Its front matter records the tracker pack and actions
+it provides; its Markdown body maps those actions to concrete labels, states,
+and other provider operations.
 
-workflow を実行するための再利用可能な手順を配置します。スキル名には他の
-ツールやユーザー定義スキルとの衝突を避けるため、`daik-` prefix を付けます。
+daik packs do not install skills or MCP servers. The user selects the skill,
+MCP server, or CLI used to operate the tracker and replaces
+`<<DAIK:TRACKER_TOOL>>` with concrete usage instructions.
 
-### `workspaces/`
+#### `workspaces/`
 
-Issue ごとの隔離された作業場所です。
+This directory contains an isolated work area for each issue.
 
 ```text
 workspaces/
@@ -129,31 +216,39 @@ workspaces/
 └── GH-124/
 ```
 
-各 Issue workspace の内部構造は `daik` が固定しません。単一の Git worktree
-だけを作ることも、複数リポジトリの worktree を並べることもできます。
-workspace hook とプロジェクトの workflow が、そのプロジェクトに必要な構造を
-決定します。
+daik does not fix the internal layout of an issue workspace. It may contain one
+Git worktree or worktrees from multiple repositories. The agent's current
+working directory remains the site root, while actual changes are made in the
+assigned checkout under `workspaces/<issue>/`.
 
-agent の current working directory は開発 workspace のルートです。実際の
-変更は、割り当てられた `workspaces/<issue>/` 内の checkout に対して行います。
-これにより、ルートの `AGENTS.md`、`.agents/skills/`、外部資料を参照しながら、
-Issue ごとの変更を分離できます。
+### File ownership
 
-## File ownership
+Files have explicit roles and owners so that initialization and future updates
+do not destroy user changes.
 
-初期化や将来の更新でユーザーの変更を失わないように、ファイルの所有権を
-区別します。
+| File | Kind | Ownership | User action |
+| --- | --- | --- | --- |
+| `AGENTS.md` | Agent instructions | User | Incorporate the copy block and document the site |
+| `.daik/daik-AGENTS.md.template` | Integration guide | daik | Use only the copy block |
+| `.agents/daik-workflow.md` | Workflow | User | Review and customize the process |
+| `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
+| `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
+| `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
+| `.daik/manifest.json` | Operation record | daik | Not used during development |
 
-| File | Ownership | Update policy |
-| --- | --- | --- |
-| `AGENTS.md` | User | `daik` は変更しない |
-| `.agents/AGENTS.md.template` | daik | 新しい推奨内容を提供できる |
-| `.agents/WORKFLOW.md` | User | 初回のみ作成し、上書きしない |
-| `.agents/skills/daik-*` | User | 初回展開後はユーザーの変更を保持する |
-| `.agents/daik-workflow-spec.md` | daik | 互換性を確認したうえで更新できる |
-| `.agents/daik-manifest.json` | daik | 展開バージョンとファイル状態を記録する |
+Generated documents also identify these roles themselves. Markdown files record
+`artifact`, `ownership`, and `user_action` in the `daik` front-matter mapping;
+the config uses `daik_document`, and the manifest uses its `document` object.
 
-## Planned architecture
+`.daik/` is an internal management area for daik and human operators. To keep
+it out of normal coding-agent discovery, daik writes `.daik/.ignore` and
+instructs agents in both `.daik/AGENTS.md` and the root `AGENTS.md` copy block
+not to inspect it unless they are maintaining daik itself.
+
+## Architecture
+
+daik is inspired by [OpenAI Symphony](https://github.com/openai/symphony),
+which monitors an issue tracker and runs coding agents in per-issue workspaces.
 
 ```text
 Issue tracker
@@ -171,26 +266,61 @@ Orchestrator
               └── coding agent
 ```
 
-オーケストレーターは、Issue の選択、同時実行数、再試行、停止、workspace の
-ライフサイクルを管理します。Issue の具体的な処理方法は
-`.agents/WORKFLOW.md` と skills に置き、プロジェクト固有の知識を
-オーケストレーター本体へ組み込みません。
+It follows Symphony's separation of scheduler, tracker adapter, workspace
+manager, and agent runner responsibilities, while emphasizing configuration
+and workflows that are deployed into and directly editable within a personal
+site.
 
-## Planned commands
+The orchestrator manages issue selection, concurrency, retries, stopping, and
+the workspace lifecycle. Concrete issue-processing policy lives in
+`.agents/daik-workflow.md` and `.agents/daik-tracker.md`, keeping site-specific
+knowledge out of the orchestrator itself.
 
-```sh
-daik init <primary-repository>
-daik validate
-daik doctor
-daik run
-daik watch
-daik status
+### Packs
+
+`site init` composes three kinds of packs: base, workflow, and tracker.
+
+```text
+templates/
+├── base/default/
+│   └── pack.yaml
+├── workflow/standard/
+│   └── pack.yaml
+└── tracker/github-issues/
+    └── pack.yaml
 ```
 
-- `init`: 現在の開発 workspace にテンプレートと設定を展開する
-- `validate`: workflow と設定ファイルを検証する
-- `doctor`: Git、coding agent、tracker認証などの実行環境を診断する
-- `run`: 実行可能な Issue を取得して処理する
-- `watch`: Issue tracker を継続的に監視する
-- `status`: 実行中、再試行待ち、完了した作業を表示する
+- A base pack provides site-wide instructions such as suggested additions to
+  `AGENTS.md`
+- A workflow pack defines the process, phases, and required tracker actions
+- A tracker pack defines how abstract actions are implemented with a provider
+  such as GitHub Issues
+
+A workflow pack's `requires` capabilities are matched against a tracker pack's
+`provides` capabilities, such as `issue.read`, `issue.set_phase`, and
+`issue.complete`. Incompatible combinations are rejected before files are
+created.
+
+Packs may provide instructions in Japanese and English, selected with
+`--lang ja` or `--lang en`. See [doc/packs.md](doc/packs.md) for the complete
+pack format.
+
+#### Third-party packs
+
+daik recursively searches for `pack.yaml` below configured template
+directories. Clone or add a third-party repository as a submodule below
+`templates/` to make its packs selectable like built-in packs. One repository
+may provide multiple packs.
+
+Use `--template-dir` when packs are stored elsewhere.
+
+```sh
+./daik/daik site packs --template-dir ../community-packs
+
+./daik/daik site init \
+  --workflow example.workflow.custom \
+  --tracker github-issues \
+  --template-dir ../community-packs \
+  --wet-run
+```
 

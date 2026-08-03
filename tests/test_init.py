@@ -1,0 +1,250 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+DAIK = Path(__file__).resolve().parents[1] / "daik"
+
+
+class InitTests(unittest.TestCase):
+    def make_workspace(self) -> Path:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        return root
+
+    def run_daik(
+        self, root: Path, *arguments: str, expected_returncode: int = 0
+    ) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            [sys.executable, str(DAIK), *arguments],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            expected_returncode,
+            msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+        return result
+
+    def test_init_creates_contract_without_agents_md(self) -> None:
+        root = self.make_workspace()
+
+        result = self.run_daik(root, "site", "init", "--wet-run")
+
+        self.assertIn("Not modified: AGENTS.md", result.stdout)
+        self.assertFalse((root / "AGENTS.md").exists())
+        self.assertTrue((root / ".daik/daik-AGENTS.md.template").is_file())
+        self.assertTrue((root / ".daik/AGENTS.md").is_file())
+        self.assertEqual((root / ".daik/.ignore").read_text(encoding="utf-8"), "*\n")
+        self.assertTrue((root / ".agents/daik-workflow.md").is_file())
+        self.assertTrue((root / ".agents/daik-config.yaml").is_file())
+        self.assertTrue((root / ".agents/daik-tracker.md").is_file())
+        self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
+        self.assertFalse((root / ".agents/skills").exists())
+        self.assertTrue((root / "workspaces").is_dir())
+
+        manifest = json.loads((root / ".daik/manifest.json").read_text())
+        self.assertEqual(manifest["tool"], "daik")
+        self.assertEqual(manifest["language"], "ja")
+        self.assertEqual(
+            [pack["id"] for pack in manifest["packs"]],
+            [
+                "daik.base.default",
+                "daik.workflow.standard",
+                "daik.tracker.github-issues",
+            ],
+        )
+        self.assertEqual(
+            manifest["files"][".agents/daik-workflow.md"]["owner"], "user"
+        )
+        workflow = (root / ".agents/daik-workflow.md").read_text(encoding="utf-8")
+        tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
+        self.assertIn('workflow_pack: "daik.workflow.standard"', workflow)
+        self.assertIn('tracker_instructions: ".agents/daik-tracker.md"', workflow)
+        self.assertIn("  artifact: workflow", workflow)
+        self.assertIn("  user_action: review-and-customize", workflow)
+        self.assertIn('    - "implementation"', workflow)
+        self.assertIn('    - "issue.set_phase"', workflow)
+        self.assertIn("# 標準Issueワークフロー", workflow)
+        self.assertNotIn("## GitHub Issues操作", workflow)
+        self.assertIn('artifact: tracker', tracker)
+        self.assertIn('tracker_pack: "daik.tracker.github-issues"', tracker)
+        self.assertIn("## GitHub Issues操作", tracker)
+        self.assertIn("<<DAIK:TRACKER_TOOL>>", tracker)
+        agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
+        self.assertIn("<!-- DAIK:COPY:BEGIN -->", agents)
+        self.assertIn("<!-- DAIK:COPY:END -->", agents)
+        self.assertIn("<<DAIK:WORKSPACE_GUIDE>>", agents)
+        config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
+        self.assertIn("artifact: config", config)
+        self.assertIn("workspace:\n  root: workspaces", config)
+        self.assertIn("tracker:\n", config)
+        self.assertLess(config.index("workspace:"), config.index("tracker:"))
+        self.assertEqual(manifest["document"]["artifact"], "manifest")
+
+    def test_repeated_init_preserves_user_files(self) -> None:
+        root = self.make_workspace()
+        self.run_daik(root, "site", "init", "--wet-run")
+        workflow = root / ".agents/daik-workflow.md"
+        workflow.write_text("custom workflow\n", encoding="utf-8")
+
+        result = self.run_daik(root, "site", "init", "--wet-run")
+
+        self.assertEqual(workflow.read_text(encoding="utf-8"), "custom workflow\n")
+        self.assertIn("Kept: .agents/daik-workflow.md", result.stdout)
+        manifest = json.loads((root / ".daik/manifest.json").read_text())
+        self.assertEqual(
+            manifest["files"][".agents/daik-workflow.md"]["state"], "modified"
+        )
+
+    def test_existing_agents_md_is_not_modified(self) -> None:
+        root = self.make_workspace()
+        agents = root / "AGENTS.md"
+        agents.write_text("user instructions\n", encoding="utf-8")
+
+        self.run_daik(root, "site", "init", "--wet-run")
+
+        self.assertEqual(agents.read_text(encoding="utf-8"), "user instructions\n")
+
+    def test_default_preview_writes_nothing(self) -> None:
+        root = self.make_workspace()
+
+        result = self.run_daik(root, "site", "init")
+
+        self.assertIn("Would create: .agents/daik-workflow.md", result.stdout)
+        self.assertIn("Preview only", result.stdout)
+        self.assertFalse((root / ".agents").exists())
+        self.assertFalse((root / "workspaces").exists())
+
+    def test_workspaces_path_must_be_a_directory(self) -> None:
+        root = self.make_workspace()
+        (root / "workspaces").write_text("not a directory\n", encoding="utf-8")
+
+        result = self.run_daik(root, "site", "init", "--wet-run", expected_returncode=2)
+
+        self.assertIn("expected a directory", result.stderr)
+        self.assertFalse((root / ".agents").exists())
+
+    def test_flat_init_command_is_not_accepted(self) -> None:
+        root = self.make_workspace()
+
+        result = self.run_daik(root, "init", expected_returncode=2)
+
+        self.assertIn("invalid choice", result.stderr)
+
+    def test_symlinked_agents_directory_is_rejected(self) -> None:
+        root = self.make_workspace()
+        outside = root / "outside"
+        outside.mkdir()
+        (root / ".agents").symlink_to(outside, target_is_directory=True)
+
+        result = self.run_daik(root, "site", "init", "--wet-run", expected_returncode=2)
+
+        self.assertIn("contains a symlink", result.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_symlinked_daik_directory_is_rejected(self) -> None:
+        root = self.make_workspace()
+        outside = root / "outside"
+        outside.mkdir()
+        (root / ".daik").symlink_to(outside, target_is_directory=True)
+
+        result = self.run_daik(root, "site", "init", "--wet-run", expected_returncode=2)
+
+        self.assertIn("contains a symlink", result.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_english_pack_variants_are_selected(self) -> None:
+        root = self.make_workspace()
+
+        self.run_daik(root, "site", "init", "--lang", "en", "--wet-run")
+
+        workflow = (root / ".agents/daik-workflow.md").read_text(encoding="utf-8")
+        tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
+        agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
+        self.assertIn("# Standard issue workflow", workflow)
+        self.assertIn("## GitHub Issues operations", tracker)
+        self.assertIn("## Issue-driven development", agents)
+
+    def test_reinit_with_different_selection_is_rejected(self) -> None:
+        root = self.make_workspace()
+        self.run_daik(root, "site", "init", "--lang", "ja", "--wet-run")
+        workflow = root / ".agents/daik-workflow.md"
+        original = workflow.read_text(encoding="utf-8")
+
+        result = self.run_daik(
+            root, "site", "init", "--lang", "en", "--wet-run", expected_returncode=2
+        )
+
+        self.assertIn("different language or pack selection", result.stderr)
+        self.assertEqual(workflow.read_text(encoding="utf-8"), original)
+
+    def test_packs_command_lists_builtin_packs(self) -> None:
+        root = self.make_workspace()
+
+        result = self.run_daik(root, "site", "packs")
+
+        self.assertIn("daik.workflow.standard", result.stdout)
+        self.assertIn("daik.tracker.github-issues", result.stdout)
+
+    def test_external_pack_is_discovered_and_capabilities_are_checked(self) -> None:
+        root = self.make_workspace()
+        external = root / "external-packs/custom"
+        (external / "workflow").mkdir(parents=True)
+        (external / "workflow/ja.md").write_text("# Custom\n", encoding="utf-8")
+        (external / "workflow/en.md").write_text("# Custom\n", encoding="utf-8")
+        (external / "pack.yaml").write_text(
+            """\
+schema_version: 1
+id: example.workflow.custom
+key: custom
+kind: workflow
+version: 1
+name:
+  ja: カスタム
+  en: Custom
+languages:
+  - ja
+  - en
+phases:
+  - custom
+requires:
+  - issue.unsupported
+contributions:
+  workflow:
+    ja: workflow/ja.md
+    en: workflow/en.md
+""",
+            encoding="utf-8",
+        )
+
+        listing = self.run_daik(
+            root, "site", "packs", "--template-dir", str(root / "external-packs")
+        )
+        self.assertIn("example.workflow.custom", listing.stdout)
+
+        result = self.run_daik(
+            root,
+            "site",
+            "init",
+            "--workflow",
+            "custom",
+            "--template-dir",
+            str(root / "external-packs"),
+            expected_returncode=2,
+        )
+        self.assertIn("issue.unsupported", result.stderr)
+        self.assertFalse((root / ".agents").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

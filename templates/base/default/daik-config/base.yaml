@@ -1,0 +1,27 @@
+# Base daik orchestrator configuration shared by all tracker packs.
+
+# Configuration schema version.
+version: 1
+
+# Document metadata used to show ownership and the expected user action.
+# It does not configure tracker or agent behavior.
+daik_document:
+  schema_version: 1
+  artifact: config
+  ownership: user
+  user_action: review-and-customize
+
+# Parent directory for per-issue workspaces, relative to the site root.
+workspace:
+  root: workspaces
+
+# Coding-agent concurrency, turn, and retry limits.
+agent:
+  max_concurrent_agents: 1
+  max_turns: 20
+  # Maximum exponential retry delay in milliseconds.
+  max_retry_backoff_ms: 300000
+
+# How frequently the orchestrator checks for eligible issues, in milliseconds.
+polling:
+  interval_ms: 30000

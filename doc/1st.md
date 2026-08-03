@@ -5,11 +5,13 @@
 
 ## Scope
 
-- [ ] `daik init`
-- [ ] テンプレート一式
-- [ ] manifest によるファイル所有権管理
+- [x] `daik site init`
+- [x] テンプレート一式
+- [x] manifest によるファイル所有権管理
+- [x] 日英、workflow、tracker packの選択と合成
+- [x] capabilityによるworkflow/tracker互換性検査
 - [ ] workflow/config validator
-- [ ] `daik doctor`
+- [ ] `daik site doctor`
 - [ ] GitHub Issues tracker adapter
 - [ ] Issue ごとの workspace と Git worktree の管理
 - [ ] coding agent runner
@@ -18,13 +20,12 @@
 
 ## Completion criteria
 
-- 開発 workspace のルートで `daik init <primary-repository>` を実行できる
+- 開発 workspace のルートで `daik site init` を実行できる
 - `AGENTS.md` を作成、変更、上書きしない
-- `.agents/` に workflow、設定、skills、導入記録を展開できる
+- `.agents/`にagent向け文書、`.daik/`にoperator向け導入記録を展開できる
 - 既存のユーザー所有ファイルを上書きしない
 - GitHub Issues から実行可能な Issue を取得できる
 - Issue ごとに `workspaces/` 以下へ隔離された作業場所を作成できる
 - coding agent を起動し、workflow に従って Issue を処理できる
 - 同時実行数の制限、再試行、停止を扱える
 - 実行状況と失敗理由をログまたは status コマンドで確認できる
-

@@ -1,0 +1,41 @@
+# GitHub Issues tracker pack. It maps daik's portable issue actions to GitHub
+# labels, comments, pull-request links, and open/closed states.
+
+# Manifest schema understood by the current daik CLI.
+schema_version: 1
+
+# Globally unique pack ID, short CLI key, pack category, and pack revision.
+id: daik.tracker.github-issues
+key: github-issues
+kind: tracker
+version: 1
+
+# Human-readable names and available instruction languages.
+name:
+  ja: GitHub Issues
+  en: GitHub Issues
+languages:
+  - ja
+  - en
+
+# Tracker-specific fragment contributed to .agents/daik-config.yaml.
+daik_config: daik-config/tracker.yaml
+
+# Portable issue actions implemented by this tracker pack. Workflow packs can
+# be combined with this pack only when all of their `requires` are provided.
+provides:
+  - issue.read
+  - issue.create
+  - issue.claim
+  - issue.set_phase
+  - issue.comment
+  - issue.link
+  - issue.block
+  - issue.complete
+
+# Localized instructions describing the concrete GitHub operation for each
+# portable action. Source paths are relative to this pack directory.
+contributions:
+  tracker:
+    ja: instructions/ja.md
+    en: instructions/en.md

@@ -1,0 +1,41 @@
+# Pack metadata read by `daik site packs` and `daik site init`.
+# Keep this file within daik's dependency-free YAML subset: mappings, scalar
+# lists, strings, integers, and booleans. Full-line comments are allowed.
+
+# Manifest schema understood by the current daik CLI.
+schema_version: 1
+
+# Globally unique pack ID, short CLI key, pack category, and pack revision.
+id: daik.base.default
+key: default
+kind: base
+version: 1
+
+# Human-readable names and available instruction languages.
+name:
+  ja: daik 基本設定
+  en: daik base
+languages:
+  - ja
+  - en
+
+# Fragment contributed to the generated .agents/daik-config.yaml. The base
+# pack owns site-wide orchestrator settings such as workspace and polling.
+daik_config: daik-config/base.yaml
+
+# Localized Markdown fragments generated from this pack.
+# `agents` becomes the AGENTS.md integration guide for the site operator.
+# `internal` becomes .daik/AGENTS.md and tells coding agents to ignore .daik/.
+contributions:
+  agents:
+    ja: instructions/ja.md
+    en: instructions/en.md
+  internal:
+    ja: internal/AGENTS.ja.md
+    en: internal/AGENTS.en.md
+
+# Static daik-owned files. Each entry maps a source path relative to this pack
+# to a destination path relative to the site root.
+files_daik:
+  files/daik-workflow-spec.md: .agents/daik-workflow-spec.md
+  files/ignore: .daik/.ignore

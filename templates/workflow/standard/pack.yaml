@@ -1,0 +1,45 @@
+# Standard provider-independent development workflow pack.
+# Pack manifests use daik's small dependency-free YAML subset.
+
+# Manifest schema understood by the current daik CLI.
+schema_version: 1
+
+# Globally unique pack ID, short CLI key, pack category, and pack revision.
+id: daik.workflow.standard
+key: standard
+kind: workflow
+version: 1
+
+# Human-readable names and available workflow languages.
+name:
+  ja: 標準ワークフロー
+  en: Standard workflow
+languages:
+  - ja
+  - en
+
+# Ordered workflow phase names written into daik-workflow.md front matter.
+# A tracker must be able to store arbitrary values passed to issue.set_phase.
+phases:
+  - implementation
+  - testing
+  - review
+  - pull-request
+
+# Portable issue actions used by this workflow. The selected tracker pack must
+# list every action below in its `provides` section.
+requires:
+  - issue.read
+  - issue.claim
+  - issue.set_phase
+  - issue.comment
+  - issue.link
+  - issue.block
+  - issue.complete
+
+# Localized provider-independent workflow instructions. Source paths are
+# relative to this pack directory.
+contributions:
+  workflow:
+    ja: workflow/ja.md
+    en: workflow/en.md

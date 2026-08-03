@@ -1,0 +1,14 @@
+# GitHub Issues settings contributed to the generated daik configuration.
+
+# Issue tracker selection and scheduler eligibility rules.
+tracker:
+  # Pack that defines the tracker operations in daik-tracker.md.
+  pack: daik.tracker.github-issues
+  # Every required label must be present before an issue can be dispatched.
+  required_labels:
+    - "daik:ready"
+  # Provider-native states eligible for work and considered terminal.
+  active_states:
+    - open
+  terminal_states:
+    - closed
