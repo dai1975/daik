@@ -9,18 +9,27 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 from typing import Any, Final
 
 
-VERSION: Final = "0.2.0"
+VERSION: Final = "0.4.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
 
 class DaikError(Exception):
     """Expected command-line error."""
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    severity: str
+    path: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -64,14 +73,12 @@ def parse_scalar(value: str, source: Path, line_number: int) -> Any:
         return value
 
 
-def parse_yaml_subset(path: Path) -> dict[str, Any]:
-    """Parse the dependency-free YAML subset used by daik pack manifests."""
+def parse_yaml_subset_text(content: str, source: Path) -> dict[str, Any]:
+    """Parse the dependency-free YAML subset used by daik documents."""
     logical_lines: list[tuple[int, int, str]] = []
-    for line_number, raw_line in enumerate(
-        path.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    for line_number, raw_line in enumerate(content.splitlines(), start=1):
         if "\t" in raw_line:
-            raise DaikError(f"{path}:{line_number}: tabs are not allowed")
+            raise DaikError(f"{source}:{line_number}: tabs are not allowed")
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -79,7 +86,7 @@ def parse_yaml_subset(path: Path) -> dict[str, Any]:
         logical_lines.append((line_number, indent, raw_line[indent:]))
 
     if not logical_lines:
-        raise DaikError(f"empty pack manifest: {path}")
+        raise DaikError(f"empty YAML document: {source}")
 
     def parse_block(index: int, indent: int) -> tuple[Any, int]:
         if index >= len(logical_lines):
@@ -92,30 +99,30 @@ def parse_yaml_subset(path: Path) -> dict[str, Any]:
             if current_indent < indent:
                 break
             if current_indent > indent:
-                raise DaikError(f"{path}:{line_number}: unexpected indentation")
+                raise DaikError(f"{source}:{line_number}: unexpected indentation")
 
             if is_list:
                 if not text.startswith("- "):
-                    raise DaikError(f"{path}:{line_number}: mixed list and mapping")
+                    raise DaikError(f"{source}:{line_number}: mixed list and mapping")
                 item = text[2:].strip()
-                if not item or ":" in item:
+                if not item:
                     raise DaikError(
-                        f"{path}:{line_number}: pack lists must contain scalar values"
+                        f"{source}:{line_number}: lists must contain scalar values"
                     )
-                result.append(parse_scalar(item, path, line_number))
+                result.append(parse_scalar(item, source, line_number))
                 index += 1
                 continue
 
             if text.startswith("- ") or ":" not in text:
-                raise DaikError(f"{path}:{line_number}: expected a mapping entry")
+                raise DaikError(f"{source}:{line_number}: expected a mapping entry")
             key, raw_value = text.split(":", 1)
             key = key.strip()
             if not key or key in result:
-                raise DaikError(f"{path}:{line_number}: invalid or duplicate key")
+                raise DaikError(f"{source}:{line_number}: invalid or duplicate key")
             raw_value = raw_value.strip()
             index += 1
             if raw_value:
-                result[key] = parse_scalar(raw_value, path, line_number)
+                result[key] = parse_scalar(raw_value, source, line_number)
             elif index < len(logical_lines) and logical_lines[index][1] > indent:
                 child_indent = logical_lines[index][1]
                 result[key], index = parse_block(index, child_indent)
@@ -125,8 +132,12 @@ def parse_yaml_subset(path: Path) -> dict[str, Any]:
 
     parsed, final_index = parse_block(0, logical_lines[0][1])
     if final_index != len(logical_lines) or not isinstance(parsed, dict):
-        raise DaikError(f"pack manifest root must be a mapping: {path}")
+        raise DaikError(f"YAML document root must be a mapping: {source}")
     return parsed
+
+
+def parse_yaml_subset(path: Path) -> dict[str, Any]:
+    return parse_yaml_subset_text(path.read_text(encoding="utf-8"), path)
 
 
 def require_string(data: dict[str, Any], key: str, source: Path) -> str:
@@ -569,6 +580,431 @@ def list_packs(args: argparse.Namespace) -> int:
     return 0
 
 
+class SiteValidator:
+    def __init__(self, root: Path):
+        self.root = root
+        self.diagnostics: list[Diagnostic] = []
+
+    def report(self, severity: str, path: str, message: str) -> None:
+        self.diagnostics.append(Diagnostic(severity, path, message))
+
+    def load_text(self, relative: str) -> str | None:
+        path = self.root / relative
+        if not path.is_file():
+            self.report("ERROR", relative, "required file is missing")
+            return None
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            self.report("ERROR", relative, f"cannot read file: {error}")
+            return None
+
+    def load_yaml(self, relative: str) -> dict[str, Any] | None:
+        content = self.load_text(relative)
+        if content is None:
+            return None
+        try:
+            return parse_yaml_subset_text(content, Path(relative))
+        except DaikError as error:
+            self.report("ERROR", relative, str(error))
+            return None
+
+    def load_front_matter(self, relative: str) -> tuple[dict[str, Any], str] | None:
+        content = self.load_text(relative)
+        if content is None:
+            return None
+        lines = content.splitlines()
+        if not lines or lines[0].strip() != "---":
+            self.report("ERROR", relative, "missing YAML front matter")
+            return None
+        try:
+            end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        except StopIteration:
+            self.report("ERROR", relative, "unterminated YAML front matter")
+            return None
+        try:
+            metadata = parse_yaml_subset_text("\n".join(lines[1:end]), Path(relative))
+        except DaikError as error:
+            self.report("ERROR", relative, str(error))
+            return None
+        return metadata, "\n".join(lines[end + 1 :])
+
+    def document_metadata(
+        self, relative: str, artifact: str, ownership: str, user_action: str
+    ) -> tuple[dict[str, Any], str] | None:
+        loaded = self.load_front_matter(relative)
+        if loaded is None:
+            return None
+        root, body = loaded
+        metadata = root.get("daik")
+        if not isinstance(metadata, dict):
+            self.report("ERROR", relative, "front matter must contain a daik mapping")
+            return None
+        expected = {
+            "schema_version": 1,
+            "artifact": artifact,
+            "ownership": ownership,
+            "user_action": user_action,
+        }
+        for key, value in expected.items():
+            if metadata.get(key) != value:
+                self.report("ERROR", relative, f"daik.{key} must be {value!r}")
+        return metadata, body
+
+    def check_placeholders(self, relative: str, content: str) -> None:
+        if "<<DAIK:" in content:
+            self.report("ERROR", relative, "contains an unresolved <<DAIK:...>> placeholder")
+
+    def validate(self) -> list[Diagnostic]:
+        manifest_text = self.load_text(".daik/manifest.json")
+        manifest: dict[str, Any] | None = None
+        if manifest_text is not None:
+            try:
+                value = json.loads(manifest_text)
+                if not isinstance(value, dict):
+                    raise ValueError("root must be an object")
+                manifest = value
+            except (json.JSONDecodeError, ValueError) as error:
+                self.report("ERROR", ".daik/manifest.json", f"invalid JSON: {error}")
+
+        workflow = self.document_metadata(
+            ".agents/daik-workflow.md", "workflow", "user", "review-and-customize"
+        )
+        tracker = self.document_metadata(
+            ".agents/daik-tracker.md", "tracker", "user", "review-and-customize"
+        )
+        self.document_metadata(
+            ".agents/daik-workflow-spec.md", "workflow-spec", "daik", "reference"
+        )
+        config = self.load_yaml(".agents/daik-config.yaml")
+        agents = self.load_text("AGENTS.md")
+
+        if agents is not None:
+            self.check_placeholders("AGENTS.md", agents)
+            for reference in (".agents/daik-workflow.md", ".agents/daik-tracker.md"):
+                if reference not in agents:
+                    self.report("ERROR", "AGENTS.md", f"does not reference {reference}")
+        for relative in (".agents/daik-workflow.md", ".agents/daik-tracker.md"):
+            path = self.root / relative
+            if path.is_file():
+                self.check_placeholders(relative, path.read_text(encoding="utf-8"))
+
+        workflow_meta = workflow[0] if workflow else {}
+        tracker_meta = tracker[0] if tracker else {}
+        phases = workflow_meta.get("phases")
+        actions = workflow_meta.get("issue_actions")
+        provides = tracker_meta.get("provides")
+        for relative, key, value in (
+            (".agents/daik-workflow.md", "phases", phases),
+            (".agents/daik-workflow.md", "issue_actions", actions),
+            (".agents/daik-tracker.md", "provides", provides),
+        ):
+            if not isinstance(value, list) or not value or not all(
+                isinstance(item, str) and item for item in value
+            ):
+                self.report("ERROR", relative, f"daik.{key} must be a non-empty list of strings")
+        if isinstance(actions, list) and isinstance(provides, list):
+            missing = sorted(set(actions) - set(provides))
+            if missing:
+                self.report(
+                    "ERROR",
+                    ".agents/daik-tracker.md",
+                    "does not provide workflow actions: " + ", ".join(missing),
+                )
+
+        if workflow_meta and tracker_meta:
+            if workflow_meta.get("tracker_pack") != tracker_meta.get("tracker_pack"):
+                self.report(
+                    "ERROR",
+                    ".agents/daik-workflow.md",
+                    "daik.tracker_pack does not match the tracker document",
+                )
+            if workflow_meta.get("tracker_instructions") != ".agents/daik-tracker.md":
+                self.report(
+                    "ERROR",
+                    ".agents/daik-workflow.md",
+                    "daik.tracker_instructions must reference .agents/daik-tracker.md",
+                )
+
+        if config is not None:
+            self.validate_config(config)
+            tracker_config = config.get("tracker")
+            if (
+                tracker_meta
+                and isinstance(tracker_config, dict)
+                and tracker_config.get("pack") != tracker_meta.get("tracker_pack")
+            ):
+                self.report(
+                    "ERROR",
+                    ".agents/daik-config.yaml",
+                    "tracker.pack does not match the tracker document",
+                )
+        if manifest is not None:
+            self.validate_manifest(manifest, workflow_meta, tracker_meta)
+
+        workspace_root = None
+        if isinstance(config, dict):
+            workspace = config.get("workspace")
+            if isinstance(workspace, dict):
+                workspace_root = workspace.get("root")
+        if isinstance(workspace_root, str):
+            relative = Path(workspace_root)
+            if not relative.is_absolute() and ".." not in relative.parts:
+                target = self.root / relative
+                if not target.is_dir():
+                    self.report("ERROR", workspace_root, "configured workspace directory is missing")
+        return self.diagnostics
+
+    def validate_config(self, config: dict[str, Any]) -> None:
+        relative = ".agents/daik-config.yaml"
+        document = config.get("daik_document")
+        expected = {
+            "schema_version": 1,
+            "artifact": "config",
+            "ownership": "user",
+            "user_action": "review-and-customize",
+        }
+        if not isinstance(document, dict):
+            self.report("ERROR", relative, "daik_document must be a mapping")
+        else:
+            for key, value in expected.items():
+                if document.get(key) != value:
+                    self.report("ERROR", relative, f"daik_document.{key} must be {value!r}")
+        if config.get("version") != 1:
+            self.report("ERROR", relative, "version must be 1")
+        workspace = config.get("workspace")
+        root = workspace.get("root") if isinstance(workspace, dict) else None
+        if not isinstance(root, str) or not root or Path(root).is_absolute() or ".." in Path(root).parts:
+            self.report("ERROR", relative, "workspace.root must be a safe relative path")
+        agent = config.get("agent")
+        if not isinstance(agent, dict):
+            self.report("ERROR", relative, "agent must be a mapping")
+        else:
+            for key in ("max_concurrent_agents", "max_turns", "max_retry_backoff_ms"):
+                value = agent.get(key)
+                if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                    self.report("ERROR", relative, f"agent.{key} must be a positive integer")
+        polling = config.get("polling")
+        interval = polling.get("interval_ms") if isinstance(polling, dict) else None
+        if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
+            self.report("ERROR", relative, "polling.interval_ms must be a positive integer")
+        tracker = config.get("tracker")
+        if not isinstance(tracker, dict) or not isinstance(tracker.get("pack"), str):
+            self.report("ERROR", relative, "tracker.pack must be a string")
+        elif any(
+            not isinstance(tracker.get(key), list)
+            or not all(isinstance(item, str) for item in tracker[key])
+            for key in ("required_labels", "active_states", "terminal_states")
+        ):
+            self.report("ERROR", relative, "tracker state and label settings must be lists of strings")
+
+    def validate_manifest(
+        self, manifest: dict[str, Any], workflow: dict[str, Any], tracker: dict[str, Any]
+    ) -> None:
+        relative = ".daik/manifest.json"
+        if manifest.get("schema_version") != 1 or manifest.get("tool") != "daik":
+            self.report("ERROR", relative, "unsupported or invalid manifest")
+        packs = manifest.get("packs")
+        selected: dict[str, str] = {}
+        if not isinstance(packs, list):
+            self.report("ERROR", relative, "packs must be a list")
+        else:
+            for pack in packs:
+                if isinstance(pack, dict) and isinstance(pack.get("kind"), str) and isinstance(pack.get("id"), str):
+                    selected[pack["kind"]] = pack["id"]
+                else:
+                    self.report("ERROR", relative, "each pack must have string kind and id")
+        for kind, metadata, key in (
+            ("workflow", workflow, "workflow_pack"),
+            ("tracker", tracker, "tracker_pack"),
+        ):
+            if metadata and selected.get(kind) != metadata.get(key):
+                self.report("ERROR", relative, f"selected {kind} pack does not match {key}")
+        language = manifest.get("language")
+        for path, metadata in (("workflow", workflow), ("tracker", tracker)):
+            if metadata and metadata.get("language") != language:
+                self.report("ERROR", relative, f"language does not match {path} document")
+        files = manifest.get("files")
+        if not isinstance(files, dict):
+            self.report("ERROR", relative, "files must be a mapping")
+            return
+        for name, record in files.items():
+            if not isinstance(name, str) or not isinstance(record, dict):
+                self.report("ERROR", relative, "invalid file record")
+                continue
+            path = self.root / name
+            if not path.is_file():
+                self.report("ERROR", name, "file recorded in manifest is missing")
+                continue
+            expected_hash = record.get("template_sha256")
+            owner = record.get("owner")
+            if not isinstance(expected_hash, str) or owner not in {"user", "daik"}:
+                self.report("ERROR", relative, f"invalid manifest record for {name}")
+                continue
+            modified = sha256_file(path) != expected_hash
+            if modified and owner == "daik":
+                self.report("ERROR", name, "daik-owned file differs from its recorded template")
+            elif modified:
+                self.report("INFO", name, "user-owned file has been customized")
+
+
+def validate_site(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    diagnostics = SiteValidator(root).validate()
+    order = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+    for diagnostic in sorted(diagnostics, key=lambda item: (order[item.severity], item.path, item.message)):
+        print(f"{diagnostic.severity} {diagnostic.path}: {diagnostic.message}")
+    counts = {severity: sum(item.severity == severity for item in diagnostics) for severity in order}
+    result = "failed" if counts["ERROR"] else "passed"
+    print(
+        f"Validation {result}: {counts['ERROR']} error(s), "
+        f"{counts['WARNING']} warning(s), {counts['INFO']} info message(s)"
+    )
+    return 1 if counts["ERROR"] else 0
+
+
+def command_result(command: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def discover_git_checkouts(root: Path, workspace_root: Path | None) -> list[Path]:
+    """Find checkout markers without reading repository contents."""
+    found: list[Path] = []
+    excluded = {root / ".agents", root / ".daik"}
+    if workspace_root is not None:
+        excluded.add(workspace_root)
+    for current_name, directories, files in os.walk(root, followlinks=False):
+        current = Path(current_name)
+        has_git_marker = ".git" in directories or ".git" in files
+        directories[:] = [
+            name
+            for name in directories
+            if name != ".git" and current / name not in excluded
+        ]
+        if has_git_marker:
+            found.append(current)
+            if current != root:
+                directories[:] = []
+    return sorted(found)
+
+
+def doctor_site(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+
+    diagnostics = SiteValidator(root).validate()
+    config: dict[str, Any] | None = None
+    config_path = root / ".agents/daik-config.yaml"
+    if config_path.is_file():
+        try:
+            config = parse_yaml_subset(config_path)
+        except (DaikError, OSError):
+            pass  # SiteValidator already reports this error.
+
+    git = shutil.which("git")
+    if git is None:
+        diagnostics.append(Diagnostic("ERROR", "git", "executable was not found on PATH"))
+    else:
+        version = command_result([git, "--version"])
+        if version is None or version.returncode != 0:
+            diagnostics.append(Diagnostic("ERROR", "git", "executable could not be run"))
+        else:
+            detail = version.stdout.strip() or "available"
+            diagnostics.append(Diagnostic("INFO", "git", detail))
+
+    workspace_path: Path | None = None
+    if config is not None:
+        workspace = config.get("workspace")
+        workspace_name = workspace.get("root") if isinstance(workspace, dict) else None
+        if isinstance(workspace_name, str):
+            candidate = Path(workspace_name)
+            if not candidate.is_absolute() and ".." not in candidate.parts:
+                workspace_path = root / candidate
+                if workspace_path.is_dir():
+                    try:
+                        with tempfile.TemporaryFile(dir=workspace_path):
+                            pass
+                    except OSError as error:
+                        diagnostics.append(
+                            Diagnostic("ERROR", workspace_name, f"directory is not writable: {error}")
+                        )
+                    else:
+                        diagnostics.append(
+                            Diagnostic("INFO", workspace_name, "workspace directory is writable")
+                        )
+
+    checkouts = discover_git_checkouts(root, workspace_path)
+    site_git = command_result([git, "-C", str(root), "rev-parse", "--show-toplevel"]) if git else None
+    site_is_repository = site_git is not None and site_git.returncode == 0
+    if checkouts:
+        diagnostics.append(
+            Diagnostic("INFO", ".", f"found {len(checkouts)} Git checkout(s) outside workspaces")
+        )
+    elif site_is_repository:
+        diagnostics.append(Diagnostic("INFO", ".", "site is managed as a Git repository"))
+    else:
+        diagnostics.append(
+            Diagnostic("WARNING", ".", "no Git checkout was found outside workspaces")
+        )
+
+    tracker_pack = None
+    if config is not None and isinstance(config.get("tracker"), dict):
+        tracker_pack = config["tracker"].get("pack")
+    if tracker_pack == "daik.tracker.github-issues":
+        gh = shutil.which("gh")
+        if gh is None:
+            diagnostics.append(
+                Diagnostic(
+                    "WARNING",
+                    "tracker",
+                    "GitHub CLI was not found; ignore this if the tracker uses a skill or MCP server",
+                )
+            )
+        else:
+            auth = command_result([gh, "auth", "status"], timeout=15)
+            if auth is not None and auth.returncode == 0:
+                diagnostics.append(Diagnostic("INFO", "tracker", "GitHub CLI authentication is valid"))
+            else:
+                diagnostics.append(
+                    Diagnostic(
+                        "WARNING",
+                        "tracker",
+                        "GitHub CLI authentication could not be verified; a skill or MCP server may be used instead",
+                    )
+                )
+    diagnostics.append(
+        Diagnostic(
+            "INFO",
+            "agent",
+            "coding-agent runtime is not configured in the current daik schema",
+        )
+    )
+
+    order = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+    for diagnostic in sorted(diagnostics, key=lambda item: (order[item.severity], item.path, item.message)):
+        print(f"{diagnostic.severity} {diagnostic.path}: {diagnostic.message}")
+    counts = {severity: sum(item.severity == severity for item in diagnostics) for severity in order}
+    result = "failed" if counts["ERROR"] else "passed"
+    print(
+        f"Doctor {result}: {counts['ERROR']} error(s), "
+        f"{counts['WARNING']} warning(s), {counts['INFO']} info message(s)"
+    )
+    return 1 if counts["ERROR"] else 0
+
+
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template-dir",
@@ -608,6 +1044,18 @@ def build_parser() -> argparse.ArgumentParser:
     packs_parser.add_argument("--lang", choices=("ja", "en"), default="ja")
     add_template_dir_argument(packs_parser)
     packs_parser.set_defaults(handler=list_packs)
+
+    validate_parser = site_subparsers.add_parser(
+        "validate", help="validate a site's local daik contract"
+    )
+    validate_parser.add_argument("--root", default=".", help="site root (default: current directory)")
+    validate_parser.set_defaults(handler=validate_site)
+
+    doctor_parser = site_subparsers.add_parser(
+        "doctor", help="diagnose a site's local tools and runtime environment"
+    )
+    doctor_parser.add_argument("--root", default=".", help="site root (default: current directory)")
+    doctor_parser.set_defaults(handler=doctor_site)
     return parser
 
 

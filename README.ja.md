@@ -11,8 +11,8 @@ coding agentを実行します。開発プロセスとtracker操作の指示は�
 名前は日本語の「大工」に由来します。
 
 > [!NOTE]
-> 現在は開発の初期段階です。必要なファイルを展開する`init`コマンドを利用でき、
-> Issue trackerとの接続やagentの実行機能は今後実装します。
+> 現在は開発の初期段階です。siteを展開・診断する`init`、`validate`、`doctor`
+> コマンドを利用でき、Issue trackerとの接続やagentの実行機能は今後実装します。
 
 ## Goals
 
@@ -99,10 +99,36 @@ my-site/
 ```sh
 daik site packs
 daik site init
+daik site validate
+daik site doctor
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
 - `site init`: 展開内容をpreviewする。`--wet-run`指定時だけ実際に書き込む
+- `site validate`: 外部サービスへ接続せず、site内の契約を検証する
+- `site doctor`: 契約を検証し、local toolと実行環境を診断する
+
+`AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
+siteを検証します。
+
+```sh
+./daik/daik site validate
+```
+
+文書metadataと構文、workflow/tracker capability、設定値、未置換placeholder、
+manifestとの整合性、daik所有ファイルの完全性を検査します。errorがある場合は
+終了status 1、warningと情報メッセージだけの場合は0を返します。
+
+より広い実行環境の診断には次のコマンドを使います。
+
+```sh
+./daik/daik site doctor
+```
+
+validateに加えて、Git、Issue用workspace外のcheckout、設定されたworkspace
+directoryへの書き込み、GitHub Issues pack選択時のGitHub CLI認証を確認します。
+skillやMCP serverを使う場合もあるため、`gh`がない、または認証を確認できない
+場合はerrorではなくwarningにします。
 
 helpは次のように表示できます。
 
@@ -114,15 +140,11 @@ helpは次のように表示できます。
 以下のコマンドは今後実装する予定です。
 
 ```sh
-daik site validate
-daik site doctor
 daik work run
 daik work watch
 daik work status
 ```
 
-- `site validate`: workflowと設定ファイルを検証する
-- `site doctor`: Git、coding agent、tracker認証などの実行環境を診断する
 - `work run`: 実行可能なIssueを取得して処理する
 - `work watch`: Issue trackerを継続的に監視する
 - `work status`: 実行中、再試行待ち、完了した作業を表示する

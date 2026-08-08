@@ -13,9 +13,9 @@ customized.
 The name comes from 大工, the Japanese word for carpenter.
 
 > [!NOTE]
-> daik is currently in an early stage of development. The `init` command can
-> deploy the required files; issue-tracker integration and agent execution will
-> be implemented later.
+> daik is currently in an early stage of development. The `init`, `validate`,
+> and `doctor` commands can deploy and diagnose a site; issue-tracker integration
+> and agent execution will be implemented later.
 
 ## Goals
 
@@ -109,10 +109,38 @@ Commands currently available:
 ```sh
 daik site packs
 daik site init
+daik site validate
+daik site doctor
 ```
 
 - `site packs`: list available packs
 - `site init`: preview deployment; write files only when `--wet-run` is supplied
+- `site validate`: validate the local site contract without accessing external services
+- `site doctor`: validate the contract and diagnose local tools and runtime readiness
+
+After copying and customizing the `AGENTS.md` block and reviewing the generated
+files, validate the site with:
+
+```sh
+./daik/daik site validate
+```
+
+The command checks document metadata and syntax, workflow/tracker capabilities,
+configuration values, unresolved placeholders, manifest consistency, and the
+integrity of daik-owned files. Errors produce exit status 1; warnings and
+informational messages do not.
+
+For broader environment diagnostics, run:
+
+```sh
+./daik/daik site doctor
+```
+
+In addition to validation, doctor checks Git, discovers checkouts outside the
+per-issue workspace area, verifies that the configured workspace directory is
+writable, and checks GitHub CLI authentication when the GitHub Issues pack is
+selected. Missing or invalid `gh` authentication is a warning because a skill
+or MCP server may be used instead.
 
 Display help with:
 
@@ -124,15 +152,11 @@ Display help with:
 The following commands are planned:
 
 ```sh
-daik site validate
-daik site doctor
 daik work run
 daik work watch
 daik work status
 ```
 
-- `site validate`: validate the workflow and configuration files
-- `site doctor`: diagnose Git, coding-agent, and tracker-authentication setup
 - `work run`: fetch and process eligible issues
 - `work watch`: continuously monitor the issue tracker
 - `work status`: show running, retrying, and completed work
@@ -323,4 +347,3 @@ Use `--template-dir` when packs are stored elsewhere.
   --template-dir ../community-packs \
   --wet-run
 ```
-

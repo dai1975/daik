@@ -10,8 +10,8 @@
 - [x] manifest によるファイル所有権管理
 - [x] 日英、workflow、tracker packの選択と合成
 - [x] capabilityによるworkflow/tracker互換性検査
-- [ ] workflow/config validator
-- [ ] `daik site doctor`
+- [x] workflow/config validator (`daik site validate`)
+- [x] `daik site doctor`
 - [ ] GitHub Issues tracker adapter
 - [ ] Issue ごとの workspace と Git worktree の管理
 - [ ] coding agent runner
