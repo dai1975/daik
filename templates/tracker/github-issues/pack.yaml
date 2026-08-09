@@ -24,8 +24,14 @@ daik_config: daik-config/tracker.yaml
 # Portable issue actions implemented by this tracker pack. Workflow packs can
 # be combined with this pack only when all of their `requires` are provided.
 provides:
+  - issue.list_ready
   - issue.read
   - issue.create
+  - issue.set_status
+  - issue.assign
+  - issue.add_dependency
+  - issue.remove_dependency
+  - issue.close
   - issue.claim
   - issue.set_phase
   - issue.comment
@@ -39,3 +45,7 @@ contributions:
   tracker:
     ja: instructions/ja.md
     en: instructions/en.md
+files_daik:
+  files/github-issues-spec.md: .daik/github-issues-spec.md
+  files/skills/daik-check-github-issues-compatibility/SKILL.md: .agents/skills/daik-check-github-issues-compatibility/SKILL.md
+  files/skills/daik-check-github-issues-compatibility/agents/openai.yaml: .agents/skills/daik-check-github-issues-compatibility/agents/openai.yaml

@@ -49,7 +49,9 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".agents/daik-config.yaml").is_file())
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
-        self.assertFalse((root / ".agents/skills").exists())
+        self.assertTrue(
+            (root / ".agents/skills/daik-check-github-issues-compatibility/SKILL.md").is_file()
+        )
         self.assertTrue((root / "workspaces").is_dir())
 
         manifest = json.loads((root / ".daik/manifest.json").read_text())
@@ -75,10 +77,10 @@ class InitTests(unittest.TestCase):
         self.assertIn('    - "implementation"', workflow)
         self.assertIn('    - "issue.set_phase"', workflow)
         self.assertIn("# 標準Issueワークフロー", workflow)
-        self.assertNotIn("## GitHub Issues操作", workflow)
+        self.assertNotIn("## GitHub Issues tracker mapping", workflow)
         self.assertIn('artifact: tracker', tracker)
         self.assertIn('tracker_pack: "daik.tracker.github-issues"', tracker)
-        self.assertIn("## GitHub Issues操作", tracker)
+        self.assertIn("## GitHub Issues tracker mapping", tracker)
         self.assertIn("<<DAIK:TRACKER_TOOL>>", tracker)
         agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
         self.assertIn("<!-- DAIK:COPY:BEGIN -->", agents)
@@ -88,6 +90,12 @@ class InitTests(unittest.TestCase):
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)
         self.assertIn("tracker:\n", config)
+        self.assertNotIn("adapter:", config)
+        self.assertNotIn("command: gh", config)
+        self.assertTrue((root / ".daik/github-issues-spec.md").is_file())
+        self.assertTrue(
+            (root / ".agents/skills/daik-check-github-issues-compatibility/SKILL.md").is_file()
+        )
         self.assertLess(config.index("workspace:"), config.index("tracker:"))
         self.assertEqual(manifest["document"]["artifact"], "manifest")
 
@@ -141,6 +149,20 @@ class InitTests(unittest.TestCase):
 
         self.assertIn("invalid choice", result.stderr)
 
+    def test_no_arguments_prints_top_level_help(self) -> None:
+        root = self.make_workspace()
+
+        result = self.run_daik(root)
+
+        self.assertIn(
+            "usage: daik [-h] [--version] <subcommand> ...\n"
+            "       daik site <init | packs | validate | doctor> ...",
+            result.stdout,
+        )
+        self.assertIn("<subcommand>", result.stdout)
+        self.assertIn("site", result.stdout)
+        self.assertEqual(result.stderr, "")
+
     def test_symlinked_agents_directory_is_rejected(self) -> None:
         root = self.make_workspace()
         outside = root / "outside"
@@ -172,7 +194,7 @@ class InitTests(unittest.TestCase):
         tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
         agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
         self.assertIn("# Standard issue workflow", workflow)
-        self.assertIn("## GitHub Issues operations", tracker)
+        self.assertIn("## GitHub Issues tracker mapping", tracker)
         self.assertIn("## Issue-driven development", agents)
 
     def test_reinit_with_different_selection_is_rejected(self) -> None:
@@ -195,6 +217,39 @@ class InitTests(unittest.TestCase):
 
         self.assertIn("daik.workflow.standard", result.stdout)
         self.assertIn("daik.tracker.github-issues", result.stdout)
+        self.assertIn("daik.tracker.beads", result.stdout)
+
+    def test_beads_tracker_pack_is_deployed(self) -> None:
+        root = self.make_workspace()
+
+        self.run_daik(root, "site", "init", "--tracker", "beads", "--wet-run")
+
+        config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
+        tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
+        self.assertIn("pack: daik.tracker.beads", config)
+        self.assertNotIn("adapter:", config)
+        self.assertNotIn("command: bd", config)
+        self.assertIn("## Beads tracker mapping", tracker)
+        self.assertIn("issue.add_dependency", tracker)
+        self.assertIn("<<DAIK:TRACKER_TOOL>>", tracker)
+        self.assertTrue((root / ".daik/beads-spec.md").is_file())
+        self.assertTrue(
+            (root / ".agents/skills/daik-check-beads-compatibility/SKILL.md").is_file()
+        )
+        (root / "AGENTS.md").write_text(
+            "Read .agents/daik-workflow.md and .agents/daik-tracker.md.\n",
+            encoding="utf-8",
+        )
+        tracker_path = root / ".agents/daik-tracker.md"
+        tracker_path.write_text(
+            tracker.replace("<<DAIK:TRACKER_TOOL>>", "Use the configured Beads MCP server."),
+            encoding="utf-8",
+        )
+        result = self.run_daik(root, "site", "validate")
+        self.assertIn("Validation passed", result.stdout)
+        doctor = self.run_daik(root, "site", "doctor")
+        self.assertIn("daik-check-beads-compatibility skill", doctor.stdout)
+        self.assertIn("Doctor passed", doctor.stdout)
 
     def test_external_pack_is_discovered_and_capabilities_are_checked(self) -> None:
         root = self.make_workspace()

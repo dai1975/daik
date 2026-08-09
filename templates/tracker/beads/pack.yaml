@@ -1,0 +1,37 @@
+# Beads tracker pack. It maps portable daik actions to the Beads data model
+# without prescribing whether the user accesses Beads through a skill, MCP, or CLI.
+schema_version: 1
+id: daik.tracker.beads
+key: beads
+kind: tracker
+version: 1
+name:
+  ja: Beads
+  en: Beads
+languages:
+  - ja
+  - en
+daik_config: daik-config/tracker.yaml
+provides:
+  - issue.list_ready
+  - issue.read
+  - issue.create
+  - issue.set_status
+  - issue.assign
+  - issue.add_dependency
+  - issue.remove_dependency
+  - issue.close
+  - issue.claim
+  - issue.set_phase
+  - issue.comment
+  - issue.link
+  - issue.block
+  - issue.complete
+contributions:
+  tracker:
+    ja: instructions/ja.md
+    en: instructions/en.md
+files_daik:
+  files/beads-spec.md: .daik/beads-spec.md
+  files/skills/daik-check-beads-compatibility/SKILL.md: .agents/skills/daik-check-beads-compatibility/SKILL.md
+  files/skills/daik-check-beads-compatibility/agents/openai.yaml: .agents/skills/daik-check-beads-compatibility/agents/openai.yaml

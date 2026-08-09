@@ -16,7 +16,7 @@ import tempfile
 from typing import Any, Final
 
 
-VERSION: Final = "0.4.0"
+VERSION: Final = "0.5.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -791,12 +791,24 @@ class SiteValidator:
         tracker = config.get("tracker")
         if not isinstance(tracker, dict) or not isinstance(tracker.get("pack"), str):
             self.report("ERROR", relative, "tracker.pack must be a string")
-        elif any(
-            not isinstance(tracker.get(key), list)
-            or not all(isinstance(item, str) for item in tracker[key])
-            for key in ("required_labels", "active_states", "terminal_states")
-        ):
-            self.report("ERROR", relative, "tracker state and label settings must be lists of strings")
+        else:
+            if any(
+                not isinstance(tracker.get(key), list)
+                or not all(isinstance(item, str) for item in tracker[key])
+                for key in ("required_labels", "active_states", "terminal_states")
+            ):
+                self.report(
+                    "ERROR", relative, "tracker state and label settings must be lists of strings"
+                )
+            if tracker.get("pack") in {
+                "daik.tracker.github-issues",
+                "daik.tracker.beads",
+            } and ("adapter" in tracker or "command" in tracker):
+                self.report(
+                    "ERROR",
+                    relative,
+                    "tracker access must be user-configured in daik-tracker.md, not as a CLI adapter",
+                )
 
     def validate_manifest(
         self, manifest: dict[str, Any], workflow: dict[str, Any], tracker: dict[str, Any]
@@ -964,27 +976,21 @@ def doctor_site(args: argparse.Namespace) -> int:
     if config is not None and isinstance(config.get("tracker"), dict):
         tracker_pack = config["tracker"].get("pack")
     if tracker_pack == "daik.tracker.github-issues":
-        gh = shutil.which("gh")
-        if gh is None:
-            diagnostics.append(
-                Diagnostic(
-                    "WARNING",
-                    "tracker",
-                    "GitHub CLI was not found; ignore this if the tracker uses a skill or MCP server",
-                )
+        diagnostics.append(
+            Diagnostic(
+                "INFO",
+                "tracker",
+                "run the daik-check-github-issues-compatibility skill when compatibility verification is required",
             )
-        else:
-            auth = command_result([gh, "auth", "status"], timeout=15)
-            if auth is not None and auth.returncode == 0:
-                diagnostics.append(Diagnostic("INFO", "tracker", "GitHub CLI authentication is valid"))
-            else:
-                diagnostics.append(
-                    Diagnostic(
-                        "WARNING",
-                        "tracker",
-                        "GitHub CLI authentication could not be verified; a skill or MCP server may be used instead",
-                    )
-                )
+        )
+    elif tracker_pack == "daik.tracker.beads":
+        diagnostics.append(
+            Diagnostic(
+                "INFO",
+                "tracker",
+                "run the daik-check-beads-compatibility skill when compatibility verification is required",
+            )
+        )
     diagnostics.append(
         Diagnostic(
             "INFO",
@@ -1017,10 +1023,17 @@ def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="daik", description="Issue-driven coding-agent workspace tools."
+        prog="daik",
+        usage=(
+            "%(prog)s [-h] [--version] <subcommand> ...\n"
+            "       %(prog)s site <init | packs | validate | doctor> ..."
+        ),
+        description="Issue-driven coding-agent workspace tools.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, metavar="<subcommand>"
+    )
     site_parser = subparsers.add_parser("site", help="manage a development workspace")
     site_subparsers = site_parser.add_subparsers(dest="site_command", required=True)
 
@@ -1061,7 +1074,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else argv
+    if not arguments:
+        parser.print_help()
+        return 0
+    args = parser.parse_args(arguments)
     try:
         return args.handler(args)
     except DaikError as error:

@@ -12,7 +12,8 @@
 - [x] capabilityによるworkflow/tracker互換性検査
 - [x] workflow/config validator (`daik site validate`)
 - [x] `daik site doctor`
-- [ ] GitHub Issues tracker adapter
+- [x] GitHub Issues tracker mappingと互換性確認skill
+- [x] Beads tracker mappingと互換性確認skill
 - [ ] Issue ごとの workspace と Git worktree の管理
 - [ ] coding agent runner
 - [ ] polling、並行実行、再試行

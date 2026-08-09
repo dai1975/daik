@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check daik Beads compatibility"
+  short_description: "Compare a Beads installation with the daik contract"
+  default_prompt: "Check whether this site Beads setup is compatible with the daik Beads contract and report evidence without changing it."

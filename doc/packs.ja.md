@@ -92,8 +92,17 @@ fallbackし、英語もなければ初期化を中止する。
 
 portableなtracker操作には`issue.*`を使用する。
 
+- `issue.list_ready`
 - `issue.read`
 - `issue.create`
+- `issue.set_status`
+- `issue.assign`
+- `issue.add_dependency`
+- `issue.remove_dependency`
+- `issue.close`
+
+workflow packは次の合成actionも使用できる。
+
 - `issue.claim`
 - `issue.set_phase`
 - `issue.comment`
@@ -101,7 +110,9 @@ portableなtracker操作には`issue.*`を使用する。
 - `issue.block`
 - `issue.complete`
 
-`issue.set_phase`の値はworkflowが自由に定義する。provider固有操作は
+`issue.set_status`と`issue.set_phase`の値はworkflowが自由に定義する。
+`issue.close`のreasonは`completed`、`duplicate`、`superseded`、`cancelled`の
+いずれかとする。provider固有操作は
 `github.request_review`のようにproviderのnamespaceを使用する。
 
 ## Safety

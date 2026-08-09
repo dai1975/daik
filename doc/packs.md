@@ -101,8 +101,17 @@ user-replaceable placeholders in the form `<<DAIK:...>>`.
 
 Portable tracker operations use the `issue.*` namespace:
 
+- `issue.list_ready`
 - `issue.read`
 - `issue.create`
+- `issue.set_status`
+- `issue.assign`
+- `issue.add_dependency`
+- `issue.remove_dependency`
+- `issue.close`
+
+Workflow packs may also use composed actions:
+
 - `issue.claim`
 - `issue.set_phase`
 - `issue.comment`
@@ -110,7 +119,9 @@ Portable tracker operations use the `issue.*` namespace:
 - `issue.block`
 - `issue.complete`
 
-A workflow may freely define values passed to `issue.set_phase`.
+A workflow may freely define values passed to `issue.set_status` and
+`issue.set_phase`. `issue.close` accepts `completed`, `duplicate`, `superseded`,
+or `cancelled` as its reason.
 Provider-specific operations use a provider namespace, such as
 `github.request_review`.
 

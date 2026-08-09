@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check daik GitHub Issues compatibility"
+  short_description: "Compare GitHub Issues with the daik contract"
+  default_prompt: "Check whether this site GitHub Issues setup is compatible with the daik contract and report evidence without changing it."

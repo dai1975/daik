@@ -12,7 +12,8 @@ coding agentを実行します。開発プロセスとtracker操作の指示は�
 
 > [!NOTE]
 > 現在は開発の初期段階です。siteを展開・診断する`init`、`validate`、`doctor`
-> コマンドを利用でき、Issue trackerとの接続やagentの実行機能は今後実装します。
+> コマンドを利用できます。GitHub IssuesとBeadsのmappingを利用でき、
+> orchestrationとagent実行機能は今後実装します。
 
 ## Goals
 
@@ -126,9 +127,9 @@ manifestとの整合性、daik所有ファイルの完全性を検査します�
 ```
 
 validateに加えて、Git、Issue用workspace外のcheckout、設定されたworkspace
-directoryへの書き込み、GitHub Issues pack選択時のGitHub CLI認証を確認します。
-skillやMCP serverを使う場合もあるため、`gh`がない、または認証を確認できない
-場合はerrorではなくwarningにします。
+directoryへの書き込みを確認します。tracker accessにはskill、MCP server、CLI、
+その他の方法を使えるため、tracker互換性については選択packのread-onlyな
+互換性確認skillを案内します。
 
 helpは次のように表示できます。
 
@@ -293,8 +294,11 @@ templates/
 │   └── pack.yaml
 ├── workflow/standard/
 │   └── pack.yaml
-└── tracker/github-issues/
-    └── pack.yaml
+└── tracker/
+    ├── github-issues/
+    │   └── pack.yaml
+    └── beads/
+        └── pack.yaml
 ```
 
 - base packは`AGENTS.md`への追記案など、site共通の指示を提供する
@@ -307,6 +311,10 @@ workflow packの`requires`とtracker packの`provides`は`issue.read`、
 
 packは日本語と英語の指示を提供でき、`--lang ja`または`--lang en`で選択します。
 詳細なpack形式は[doc/packs.ja.md](doc/packs.ja.md)を参照してください。
+
+GitHub IssuesとBeadsのpackはprovider dataの変更を定義し、skill、MCP server、
+CLIなどのaccess方法はユーザーが指定する。共通契約とprovider mappingは
+[doc/trackers.ja.md](doc/trackers.ja.md)を参照してください。
 
 #### Third-party packs
 

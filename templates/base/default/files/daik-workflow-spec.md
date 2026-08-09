@@ -36,8 +36,17 @@ The `daik` mapping records the workflow contract in machine-readable form:
 
 Workflow packs may require these provider-independent operations:
 
+- `issue.list_ready`
 - `issue.read`
 - `issue.create`
+- `issue.set_status`
+- `issue.assign`
+- `issue.add_dependency`
+- `issue.remove_dependency`
+- `issue.close`
+
+Workflow packs may also request composed actions:
+
 - `issue.claim`
 - `issue.set_phase`
 - `issue.comment`
@@ -45,7 +54,9 @@ Workflow packs may require these provider-independent operations:
 - `issue.block`
 - `issue.complete`
 
-`issue.set_phase` accepts a workflow-defined string. Tracker packs specify how
+`issue.set_status` and `issue.set_phase` accept workflow-defined strings.
+`issue.close` accepts `completed`, `duplicate`, `superseded`, or `cancelled`.
+Tracker packs specify how
 each operation and phase is represented by the selected tracker.
 
 Provider-specific extensions use a provider namespace, such as

@@ -14,8 +14,9 @@ The name comes from 大工, the Japanese word for carpenter.
 
 > [!NOTE]
 > daik is currently in an early stage of development. The `init`, `validate`,
-> and `doctor` commands can deploy and diagnose a site; issue-tracker integration
-> and agent execution will be implemented later.
+> and `doctor` commands can deploy and diagnose a site. GitHub Issues and Beads
+> mappings are available; orchestration and agent execution will be
+> implemented later.
 
 ## Goals
 
@@ -137,10 +138,10 @@ For broader environment diagnostics, run:
 ```
 
 In addition to validation, doctor checks Git, discovers checkouts outside the
-per-issue workspace area, verifies that the configured workspace directory is
-writable, and checks GitHub CLI authentication when the GitHub Issues pack is
-selected. Missing or invalid `gh` authentication is a warning because a skill
-or MCP server may be used instead.
+per-issue workspace area, and verifies that the configured workspace directory
+is writable. For tracker compatibility it points to the selected pack's
+read-only compatibility skill, because tracker access may use a skill, MCP
+server, CLI, or another method.
 
 Display help with:
 
@@ -310,8 +311,11 @@ templates/
 │   └── pack.yaml
 ├── workflow/standard/
 │   └── pack.yaml
-└── tracker/github-issues/
-    └── pack.yaml
+└── tracker/
+    ├── github-issues/
+    │   └── pack.yaml
+    └── beads/
+        └── pack.yaml
 ```
 
 - A base pack provides site-wide instructions such as suggested additions to
@@ -328,6 +332,10 @@ created.
 Packs may provide instructions in Japanese and English, selected with
 `--lang ja` or `--lang en`. See [doc/packs.md](doc/packs.md) for the complete
 pack format.
+
+The GitHub Issues and Beads packs define provider data changes while leaving
+access through a skill, MCP server, CLI, or another method to the user. See
+[doc/trackers.md](doc/trackers.md) for the common contract and provider mappings.
 
 #### Third-party packs
 
