@@ -14,6 +14,18 @@ daik_document:
 # Parent directory for per-issue workspaces, relative to the site root.
 workspace:
   root: workspaces
+  # Prefix used for issue worktree branches.
+  branch_prefix: daik
+  # Worktrees are removed only by an explicit wet-run command.
+  cleanup: manual
+
+# Source Git repositories available for issue workspaces. Add one mapping per
+# repository; paths are relative to the site root. Example:
+# repositories:
+#   backend:
+#     path: backend
+#     base: main
+repositories:
 
 # Coding-agent concurrency, turn, and retry limits.
 agent:

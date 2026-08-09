@@ -8,6 +8,8 @@ and hand the work safely to a human or the next stage.
 ## Process
 
 Follow `.agents/daik-tracker.md` for the concrete execution of issue actions.
+Before acting, read the latest workspace and handoff events. At each role or
+phase boundary, append a structured handoff event for the next agent.
 
 1. Read `AGENTS.md`, applicable instructions, the issue, and reference material.
 2. Confirm the acceptance criteria and editable scope, then claim the issue.

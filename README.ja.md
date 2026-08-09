@@ -102,12 +102,20 @@ daik site packs
 daik site init
 daik site validate
 daik site doctor
+daik work workspace create
+daik work workspace show
+daik work workspace list
+daik work workspace reconcile
+daik work workspace remove
+daik work handoff create
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
 - `site init`: 展開内容をpreviewする。`--wet-run`指定時だけ実際に書き込む
 - `site validate`: 外部サービスへ接続せず、site内の契約を検証する
 - `site doctor`: 契約を検証し、local toolと実行環境を診断する
+- `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
+- `work handoff create`: 次のagent role向けのstructured eventを生成する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -136,7 +144,46 @@ helpは次のように表示できます。
 ```sh
 ./daik/daik --help
 ./daik/daik site init --help
+./daik/daik work workspace --help
 ```
+
+workspaceを作る前に`.agents/daik-config.yaml`へsource repositoryを設定します。
+
+```yaml
+repositories:
+  backend:
+    path: backend
+    base: main
+  frontend:
+    path: frontend
+    base: main
+```
+
+設定されたrepositoryごとにworktreeを作成または再利用します。
+
+```sh
+./daik/daik work workspace create github:backend#123
+```
+
+commandは`daik.issue-event.v1` JSON objectを出力します。その完全なeventを
+`.agents/daik-tracker.md`で指定されたaccess方法を使ってIssueへ投稿します。
+daikはruntime workspace metadataを`.daik/`へ保存しません。localの正本はGit、
+共有状態の正本はappend-onlyなIssue eventです。
+
+roleの境界では次のagent向けhandoff eventを生成します。
+
+```sh
+./daik/daik work handoff create github:backend#123 \
+  --from implementation \
+  --to review \
+  --phase review \
+  --summary "Implementation and tests completed" \
+  --validation "pytest=passed" \
+  --next-action "Review retry boundaries"
+```
+
+`workspace remove`はdefaultでpreviewだけを行い、worktreeの削除には`--wet-run`が
+必要です。Issue branchは削除しません。
 
 以下のコマンドは今後実装する予定です。
 
@@ -175,7 +222,8 @@ my-site/
 │   ├── daik-workflow.md
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
-│   └── daik-workflow-spec.md
+│   ├── daik-workflow-spec.md
+│   └── daik-issue-event-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -230,6 +278,11 @@ workspaces/
 working directoryはsiteのルートですが、実際の変更は割り当てられた
 `workspaces/<issue>/`内のcheckoutに対して行います。
 
+workspaceとagentのstateは`.daik/`へ書きません。commandは
+`.agents/daik-issue-event-spec.md`で定義されたstructured eventを生成し、tracker
+packがIssueへの追記方法を規定します。次のagentは最新のworkspace eventとhandoff
+eventを読んでから作業を継続します。
+
 ### File ownership
 
 初期化や将来の更新でユーザーの変更を失わないように、ファイルの役割と所有者を
@@ -243,6 +296,7 @@ working directoryはsiteのルートですが、実際の変更は割り当て�
 | `.agents/daik-tracker.md` | Tracker guide | User | 操作mappingとplaceholderを確認・編集する |
 | `.agents/daik-config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
+| `.agents/daik-issue-event-spec.md` | Issue event contract | daik | 通常は参照のみ |
 | `.daik/manifest.json` | Operation record | daik | 開発時には使用しない |
 
 生成文書自身にも同じ区別を示します。Markdownはfront matterの`daik` mapping、

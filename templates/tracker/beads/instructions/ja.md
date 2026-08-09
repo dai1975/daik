@@ -39,3 +39,11 @@ data変更を定義し、操作手段は規定しない。次にユーザーが�
   `daik:running`を`daik:blocked`へ置き換えて理由を追記する。
 - `issue.complete`: `issue.close(completed, <summary>)`を実行し、一時的なdaik作業
   labelを削除する。
+
+### daik issue event
+
+daikが生成した`daik.issue-event.v1` objectは全てbeadのappend-only notesまたは
+event historyへ追記する。完全なJSON objectを保存し、以前のeventを置換しない。
+検索用にBeads status、labels、assignee、dependenciesへ現在状態をmirrorするが、
+handoffとworkspace記録の正本はevent historyとする。作業開始前に最新のworkspace
+eventと最新の`handoff` eventを読む。

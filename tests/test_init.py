@@ -49,6 +49,7 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".agents/daik-config.yaml").is_file())
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
+        self.assertTrue((root / ".agents/daik-issue-event-spec.md").is_file())
         self.assertTrue(
             (root / ".agents/skills/daik-check-github-issues-compatibility/SKILL.md").is_file()
         )
@@ -86,6 +87,7 @@ class InitTests(unittest.TestCase):
         self.assertIn("<!-- DAIK:COPY:BEGIN -->", agents)
         self.assertIn("<!-- DAIK:COPY:END -->", agents)
         self.assertIn("<<DAIK:WORKSPACE_GUIDE>>", agents)
+        self.assertIn(".agents/daik-issue-event-spec.md", agents)
         config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)

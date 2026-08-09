@@ -42,3 +42,11 @@ The standard workflow's higher-level actions are compositions:
 - `issue.complete`: call `issue.close(completed, <summary>)` and remove transient
   daik work labels.
 
+### daik issue events
+
+Append every `daik.issue-event.v1` object produced by daik to the bead's
+append-only notes or event history. Preserve the complete JSON object and never
+replace earlier events. Beads status, labels, assignee, and dependencies mirror
+current state for queries; the event history remains the authoritative handoff
+and workspace record. Before starting work, read the latest workspace event and
+latest `handoff` event.

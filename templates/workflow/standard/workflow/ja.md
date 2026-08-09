@@ -8,6 +8,8 @@
 ## Process
 
 Issue actionの具体的な実行方法は`.agents/daik-tracker.md`に従う。
+作業開始前に最新のworkspace eventとhandoff eventを読む。roleまたはphaseの境界では、
+次のagent向けにstructured handoff eventを追記する。
 
 1. `AGENTS.md`、関連する指示、Issue、資料を読む。
 2. Issueの受け入れ条件と編集可能な範囲を確認し、Issueをclaimする。

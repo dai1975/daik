@@ -38,4 +38,5 @@ contributions:
 # to a destination path relative to the site root.
 files_daik:
   files/daik-workflow-spec.md: .agents/daik-workflow-spec.md
+  files/daik-issue-event-spec.md: .agents/daik-issue-event-spec.md
   files/ignore: .daik/.ignore

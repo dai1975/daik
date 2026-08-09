@@ -15,8 +15,10 @@ import sys
 import tempfile
 from typing import Any, Final
 
+from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
-VERSION: Final = "0.5.0"
+
+VERSION: Final = "0.6.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -676,6 +678,9 @@ class SiteValidator:
         self.document_metadata(
             ".agents/daik-workflow-spec.md", "workflow-spec", "daik", "reference"
         )
+        self.document_metadata(
+            ".agents/daik-issue-event-spec.md", "issue-event-spec", "daik", "reference"
+        )
         config = self.load_yaml(".agents/daik-config.yaml")
         agents = self.load_text("AGENTS.md")
 
@@ -776,6 +781,49 @@ class SiteValidator:
         root = workspace.get("root") if isinstance(workspace, dict) else None
         if not isinstance(root, str) or not root or Path(root).is_absolute() or ".." in Path(root).parts:
             self.report("ERROR", relative, "workspace.root must be a safe relative path")
+        if isinstance(workspace, dict):
+            branch_prefix = workspace.get("branch_prefix")
+            if (
+                not isinstance(branch_prefix, str)
+                or not branch_prefix
+                or "/" in branch_prefix
+            ):
+                self.report(
+                    "ERROR", relative, "workspace.branch_prefix must be a non-empty path component"
+                )
+            if workspace.get("cleanup") not in {"manual"}:
+                self.report("ERROR", relative, "workspace.cleanup must currently be 'manual'")
+        repositories = config.get("repositories")
+        if not isinstance(repositories, dict):
+            self.report("ERROR", relative, "repositories must be a mapping")
+        elif not repositories:
+            self.report("WARNING", relative, "no workspace repositories are configured")
+        else:
+            for name, settings in repositories.items():
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or Path(name).name != name
+                    or name in {".", ".."}
+                    or not isinstance(settings, dict)
+                ):
+                    self.report("ERROR", relative, "each repository must be a named mapping")
+                    continue
+                path_value = settings.get("path")
+                if (
+                    not isinstance(path_value, str)
+                    or not path_value
+                    or Path(path_value).is_absolute()
+                    or ".." in Path(path_value).parts
+                ):
+                    self.report(
+                        "ERROR", relative, f"repositories.{name}.path must be a safe relative path"
+                    )
+                base = settings.get("base", "HEAD")
+                if not isinstance(base, str) or not base:
+                    self.report(
+                        "ERROR", relative, f"repositories.{name}.base must be a non-empty string"
+                    )
         agent = config.get("agent")
         if not isinstance(agent, dict):
             self.report("ERROR", relative, "agent must be a mapping")
@@ -1011,6 +1059,94 @@ def doctor_site(args: argparse.Namespace) -> int:
     return 1 if counts["ERROR"] else 0
 
 
+def load_site_config(root: Path) -> dict[str, Any]:
+    path = root / ".agents/daik-config.yaml"
+    if not path.is_file():
+        raise DaikError(f"required configuration is missing: {path}")
+    return parse_yaml_subset(path)
+
+
+def workspace_manager(args: argparse.Namespace) -> WorkspaceManager:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    try:
+        return WorkspaceManager(root, load_site_config(root))
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+
+
+def work_workspace_create(args: argparse.Namespace) -> int:
+    try:
+        result = workspace_manager(args).create(args.issue, args.repo)
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    return 0
+
+
+def work_workspace_show(args: argparse.Namespace) -> int:
+    try:
+        result = workspace_manager(args).inspect(args.issue, args.repo)
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    return 0
+
+
+def work_workspace_list(args: argparse.Namespace) -> int:
+    try:
+        result = workspace_manager(args).list()
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    return 0
+
+
+def work_workspace_reconcile(args: argparse.Namespace) -> int:
+    try:
+        content = sys.stdin.read() if args.event == "-" else Path(args.event).read_text(encoding="utf-8")
+        expected = json.loads(content)
+        if not isinstance(expected, dict):
+            raise WorkspaceError("expected event root must be an object")
+        result, compatible = workspace_manager(args).reconcile(args.issue, expected)
+    except (WorkspaceError, json.JSONDecodeError, OSError) as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    return 0 if compatible else 1
+
+
+def work_workspace_remove(args: argparse.Namespace) -> int:
+    try:
+        result = workspace_manager(args).remove(args.issue, args.repo, args.wet_run)
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    if not args.wet_run:
+        print("Preview only: run again with --wet-run to remove worktrees", file=sys.stderr)
+    return 0
+
+
+def work_handoff_create(args: argparse.Namespace) -> int:
+    try:
+        result = handoff_event(
+            args.issue,
+            args.from_role,
+            args.to_role,
+            args.phase,
+            args.summary,
+            args.commit,
+            args.validation,
+            args.decision,
+            args.risk,
+            args.next_action,
+        )
+    except WorkspaceError as error:
+        raise DaikError(str(error)) from error
+    print(dump_event(result))
+    return 0
+
+
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template-dir",
@@ -1026,7 +1162,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="daik",
         usage=(
             "%(prog)s [-h] [--version] <subcommand> ...\n"
-            "       %(prog)s site <init | packs | validate | doctor> ..."
+            "       %(prog)s site <init | packs | validate | doctor> ...\n"
+            "       %(prog)s work <workspace | handoff> ..."
         ),
         description="Issue-driven coding-agent workspace tools.",
     )
@@ -1069,6 +1206,73 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser.add_argument("--root", default=".", help="site root (default: current directory)")
     doctor_parser.set_defaults(handler=doctor_site)
+
+    work_parser = subparsers.add_parser("work", help="manage issue work and handoffs")
+    work_subparsers = work_parser.add_subparsers(
+        dest="work_command", required=True, metavar="<work-command>"
+    )
+    workspace_parser = work_subparsers.add_parser(
+        "workspace", help="manage per-issue Git worktrees"
+    )
+    workspace_subparsers = workspace_parser.add_subparsers(
+        dest="workspace_command", required=True, metavar="<workspace-command>"
+    )
+
+    def add_workspace_common(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("issue", metavar="ISSUE")
+        command_parser.add_argument("--root", default=".", help="site root")
+        command_parser.add_argument(
+            "--repo", action="append", default=[], metavar="NAME", help="repository to include"
+        )
+
+    create_parser = workspace_subparsers.add_parser("create", help="create or reuse worktrees")
+    add_workspace_common(create_parser)
+    create_parser.set_defaults(handler=work_workspace_create)
+
+    show_parser = workspace_subparsers.add_parser("show", help="inspect local worktrees")
+    add_workspace_common(show_parser)
+    show_parser.set_defaults(handler=work_workspace_show)
+
+    list_parser = workspace_subparsers.add_parser("list", help="list local workspace directories")
+    list_parser.add_argument("--root", default=".", help="site root")
+    list_parser.set_defaults(handler=work_workspace_list)
+
+    reconcile_parser = workspace_subparsers.add_parser(
+        "reconcile", help="compare local worktrees with a recorded issue event"
+    )
+    add_workspace_common(reconcile_parser)
+    reconcile_parser.add_argument(
+        "--event", required=True, metavar="PATH", help="recorded event JSON path, or - for stdin"
+    )
+    reconcile_parser.set_defaults(handler=work_workspace_reconcile)
+
+    remove_parser = workspace_subparsers.add_parser("remove", help="remove worktrees, retaining branches")
+    add_workspace_common(remove_parser)
+    remove_parser.add_argument(
+        "--wet-run", action="store_true", help="perform the previewed worktree removals"
+    )
+    remove_parser.set_defaults(handler=work_workspace_remove)
+
+    handoff_parser = work_subparsers.add_parser("handoff", help="create agent handoff events")
+    handoff_subparsers = handoff_parser.add_subparsers(
+        dest="handoff_command", required=True, metavar="<handoff-command>"
+    )
+    handoff_create_parser = handoff_subparsers.add_parser(
+        "create", help="emit a structured handoff event"
+    )
+    handoff_create_parser.add_argument("issue", metavar="ISSUE")
+    handoff_create_parser.add_argument("--from", dest="from_role", required=True, metavar="ROLE")
+    handoff_create_parser.add_argument("--to", dest="to_role", required=True, metavar="ROLE")
+    handoff_create_parser.add_argument("--phase", required=True)
+    handoff_create_parser.add_argument("--summary", required=True)
+    handoff_create_parser.add_argument("--commit", action="append", default=[])
+    handoff_create_parser.add_argument(
+        "--validation", action="append", default=[], metavar="COMMAND=RESULT"
+    )
+    handoff_create_parser.add_argument("--decision", action="append", default=[])
+    handoff_create_parser.add_argument("--risk", action="append", default=[])
+    handoff_create_parser.add_argument("--next-action", action="append", default=[])
+    handoff_create_parser.set_defaults(handler=work_handoff_create)
     return parser
 
 

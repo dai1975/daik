@@ -112,12 +112,20 @@ daik site packs
 daik site init
 daik site validate
 daik site doctor
+daik work workspace create
+daik work workspace show
+daik work workspace list
+daik work workspace reconcile
+daik work workspace remove
+daik work handoff create
 ```
 
 - `site packs`: list available packs
 - `site init`: preview deployment; write files only when `--wet-run` is supplied
 - `site validate`: validate the local site contract without accessing external services
 - `site doctor`: validate the contract and diagnose local tools and runtime readiness
+- `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
+- `work handoff create`: emit a structured event for the next agent role
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -148,7 +156,47 @@ Display help with:
 ```sh
 ./daik/daik --help
 ./daik/daik site init --help
+./daik/daik work workspace --help
 ```
+
+Configure source repositories in `.agents/daik-config.yaml` before creating a
+workspace:
+
+```yaml
+repositories:
+  backend:
+    path: backend
+    base: main
+  frontend:
+    path: frontend
+    base: main
+```
+
+Create or reuse one worktree per configured repository:
+
+```sh
+./daik/daik work workspace create github:backend#123
+```
+
+The command prints a `daik.issue-event.v1` JSON object. Post that complete event
+to the issue using the access method configured in `.agents/daik-tracker.md`.
+daik stores no runtime workspace metadata in `.daik/`; Git is the local source
+of truth and append-only issue events are the shared source of truth.
+
+At a role boundary, generate a handoff event for the next agent:
+
+```sh
+./daik/daik work handoff create github:backend#123 \
+  --from implementation \
+  --to review \
+  --phase review \
+  --summary "Implementation and tests completed" \
+  --validation "pytest=passed" \
+  --next-action "Review retry boundaries"
+```
+
+`workspace remove` previews by default and requires `--wet-run` to remove
+worktrees. It never deletes issue branches.
 
 The following commands are planned:
 
@@ -190,7 +238,8 @@ my-site/
 │   ├── daik-workflow.md
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
-│   └── daik-workflow-spec.md
+│   ├── daik-workflow-spec.md
+│   └── daik-issue-event-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -246,6 +295,11 @@ Git worktree or worktrees from multiple repositories. The agent's current
 working directory remains the site root, while actual changes are made in the
 assigned checkout under `workspaces/<issue>/`.
 
+Workspace and agent state are not written to `.daik/`. Commands emit structured
+events defined by `.agents/daik-issue-event-spec.md`; tracker packs describe how
+to append them to each issue. A receiving agent reads the latest workspace and
+handoff events before continuing the task.
+
 ### File ownership
 
 Files have explicit roles and owners so that initialization and future updates
@@ -259,6 +313,7 @@ do not destroy user changes.
 | `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
 | `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
+| `.agents/daik-issue-event-spec.md` | Issue event contract | daik | Normally read-only |
 | `.daik/manifest.json` | Operation record | daik | Not used during development |
 
 Generated documents also identify these roles themselves. Markdown files record

@@ -20,6 +20,7 @@ daik:
 Issue trackerから割り当てられた作業では、`.agents/daik-workflow.md`に定義された
 プロセスに従ってください。このworkflowの書式と共通操作は
 `.agents/daik-workflow-spec.md`、daikの実行設定は`.agents/daik-config.yaml`に
+定義されています。runtime issue eventは`.agents/daik-issue-event-spec.md`に
 定義されています。Issue trackerの具体的な操作は`.agents/daik-tracker.md`に
 従ってください。Issueごとの書き込み可能なcheckoutは
 `workspaces/`以下に作成されます。

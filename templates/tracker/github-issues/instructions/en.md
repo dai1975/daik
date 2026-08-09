@@ -46,3 +46,12 @@ The standard workflow's higher-level actions are compositions:
   known, replace `daik:running` with `daik:blocked`, and comment with the reason.
 - `issue.complete`: call `issue.close(completed, <summary>)` and remove transient
   daik work labels.
+
+### daik issue events
+
+Append every `daik.issue-event.v1` object produced by daik as an issue comment.
+Put `<!-- daik:issue-event:v1 -->` immediately before a fenced `json` block
+containing the complete object. Never edit or replace earlier event comments.
+Labels and assignees mirror current state for queries; event comments remain the
+authoritative handoff and workspace history. Before starting work, read the
+latest workspace event and latest `handoff` event.

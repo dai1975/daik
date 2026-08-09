@@ -14,7 +14,8 @@
 - [x] `daik site doctor`
 - [x] GitHub Issues tracker mappingと互換性確認skill
 - [x] Beads tracker mappingと互換性確認skill
-- [ ] Issue ごとの workspace と Git worktree の管理
+- [x] Issue ごとの workspace と Git worktree の管理
+- [x] Issue eventによるagent間handoff
 - [ ] coding agent runner
 - [ ] polling、並行実行、再試行
 - [ ] structured logging と status 表示

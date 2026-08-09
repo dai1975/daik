@@ -42,3 +42,11 @@ daik close reasonは`completed`、`duplicate`、`superseded`、`cancelled`とす
   追加し、`daik:running`を`daik:blocked`へ置き換えて理由をcommentする。
 - `issue.complete`: `issue.close(completed, <summary>)`を実行し、一時的なdaik作業
   labelを削除する。
+
+### daik issue event
+
+daikが生成した`daik.issue-event.v1` objectは全てIssue commentとして追記する。
+完全なobjectを含む`json` code blockの直前へ`<!-- daik:issue-event:v1 -->`を置く。
+以前のevent commentは編集・置換しない。検索用にlabelとassigneeへ現在状態をmirror
+するが、handoffとworkspace履歴の正本はevent commentとする。作業開始前に最新の
+workspace eventと最新の`handoff` eventを読む。
