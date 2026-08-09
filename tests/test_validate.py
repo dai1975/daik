@@ -42,7 +42,7 @@ class ValidateTests(unittest.TestCase):
 
     def complete_user_setup(self) -> None:
         (self.root / "AGENTS.md").write_text(
-            "Read .agents/daik-workflow.md and .agents/daik-tracker.md.\n",
+            "Read .agents/daik-workflow.yaml and .agents/daik-tracker.md.\n",
             encoding="utf-8",
         )
         tracker = self.root / ".agents/daik-tracker.md"
@@ -95,6 +95,53 @@ class ValidateTests(unittest.TestCase):
         result = self.run_daik("site", "validate", expected_returncode=1)
 
         self.assertIn("does not provide workflow actions: issue.complete", result.stdout)
+
+    def test_workflow_transition_target_must_exist(self) -> None:
+        self.complete_user_setup()
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "to: testing", "to: missing_state", 1
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            "states.implementation.transitions.ready_for_testing.to must name an existing state",
+            result.stdout,
+        )
+
+    def test_workflow_requires_one_fallback_per_non_final_state(self) -> None:
+        self.complete_user_setup()
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "        otherwise: true", "        when: fallback", 1
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            "states.implementation.transitions must contain exactly one otherwise fallback",
+            result.stdout,
+        )
+
+    def test_workflow_rejects_unreachable_state(self) -> None:
+        self.complete_user_setup()
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            + "\n  abandoned:\n    type: final\n    outcome: failure\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn("state 'abandoned' is unreachable from initial", result.stdout)
 
     def test_modified_daik_owned_file_is_an_error(self) -> None:
         self.complete_user_setup()

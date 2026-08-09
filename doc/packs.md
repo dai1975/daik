@@ -31,10 +31,6 @@ languages:
   - ja
   - en
 daik_config: daik-config/workflow.yaml
-phases:
-  - implementation
-  - testing
-  - review
 requires:
   - issue.read
   - issue.set_phase
@@ -43,8 +39,8 @@ provides:
   - example.optional-capability
 contributions:
   workflow:
-    ja: workflow/ja.md
-    en: workflow/en.md
+    ja: workflow/ja.yaml
+    en: workflow/en.yaml
 files_user:
   config/example.yaml: .agents/example.yaml
 files_daik:
@@ -63,10 +59,9 @@ files_daik:
 - `languages`: natural languages provided by the pack
 - `daik_config`: optional pack-relative YAML fragment appended to the generated
   `.agents/daik-config.yaml`
-- `phases`: workflow phases; required for workflow packs
 - `requires`: capabilities required by a workflow from its tracker
 - `provides`: capabilities implemented by a tracker
-- `contributions`: localized Markdown fragments
+- `contributions`: localized documents or Markdown fragments
 - `files_user`: user-owned files placed only on first initialization
 - `files_daik`: static files recorded as daik-owned
 
@@ -85,8 +80,9 @@ The currently supported contribution slots are:
 
 - `agents`: appended to `.daik/daik-AGENTS.md.template`
 - `internal`: appended to `.daik/AGENTS.md`
-- `workflow`: appended to the workflow portion of
-  `.agents/daik-workflow.md`
+- `workflow`: the complete deterministic state-machine body appended after the
+  generated `daik` metadata in `.agents/daik-workflow.yaml`; exactly one
+  workflow pack must contribute one YAML document
 - `tracker`: appended to `.agents/daik-tracker.md`
 
 Each value maps a language to a path relative to the pack. If the requested

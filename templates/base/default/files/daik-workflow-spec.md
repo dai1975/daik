@@ -8,33 +8,86 @@ daik:
 
 # daik workflow specification
 
-Status: Draft v1
+Status: Draft v1alpha1
 
-`.agents/daik-workflow.md` is the project-owned workflow given to coding agents that
-process issues.
+`.agents/daik-workflow.yaml` is a deterministic state machine for processing one
+issue. The graph is fixed before execution; an agent may interpret a natural-language
+condition, but may only select one of the transitions declared for the current state.
 
-## Ownership
+## Ownership and document identity
 
-- `daik site init` creates the file only when it does not exist.
-- After creation, the user owns the file and daik does not overwrite it.
-- The file is generated from the selected workflow pack and references the
-  separately generated `.agents/daik-tracker.md`.
+`daik site init` creates the workflow only when it does not exist. The user owns and
+may customize it. The YAML document contains:
 
-## Front matter
+- `daik`: generated pack, language, tracker, and portable-action metadata
+- `api_version`: `daik.dev/v1alpha1`
+- `kind`: `coding-workflow`
+- `initial`: the first state name
+- `limits.max_transitions`: maximum transitions for the entire run
+- `limits.on_limit`: declared state entered when that global limit is reached
+- `agents`: named agent profiles
+- `states`: named states and their declared outgoing edges
 
-The `daik` mapping records the workflow contract in machine-readable form:
+Mappings are keyed by stable names. Sequence order has no execution meaning.
 
-- `schema_version`
-- `language`
-- `workflow_pack`
-- `tracker_pack`
-- `tracker_instructions`
-- `phases`
-- `issue_actions`
+## Agent profiles
+
+Each entry under `agents` has a non-empty `role` and `instructions`. An agent state
+references one profile by name. A runner starts a fresh agent invocation whenever it
+enters an agent state, even if the previous state used the same profile.
+
+The new agent reads the issue and the latest structured handoff events before acting.
+It records its results and a handoff event in the issue tracker before selecting a
+transition. The issue tracker, not local daik state, is the durable source of run and
+handoff information.
+
+## State types
+
+### `agent`
+
+An agent state requires `agent`, `task`, `max_visits`, `transitions`, `on_error`, and
+`on_limit`. `max_visits` bounds repeated entry to that state. `on_error.to` is used
+when the invocation cannot evaluate normal transitions. `on_limit.to` is used before
+starting an invocation that would exceed `max_visits`.
+
+### `human`
+
+A human state requires `prompt` and `transitions`. The runner records the request in
+the issue and waits. After an explicit human response, an agent evaluates only the
+declared transitions against that response.
+
+### `final`
+
+A final state requires an `outcome` of `success`, `failure`, or `cancelled`, and has
+no transitions. A workflow defines at least one final state for each outcome.
+
+## Transitions
+
+`transitions` is a mapping keyed by transition name. Each transition has `to` and
+exactly one selector:
+
+- `when`: a non-empty natural-language condition
+- `otherwise: true`: the fallback when no `when` condition is satisfied
+
+Every non-final state has exactly one `otherwise` transition. The evaluating agent
+must select exactly one declared transition and return its name, rationale, and
+evidence. It must not invent a target, skip a state, or perform work belonging to the
+next state. If more than one `when` appears true, the agent must use `on_error` rather
+than choose arbitrarily.
+
+## Limits and exceptional flow
+
+The runner counts every state transition and stops normal execution before
+`limits.max_transitions` would be exceeded. It records the reason and routes to
+`limits.on_limit`. Agent-state visit limits are handled by the state's `on_limit`.
+Invocation or condition-evaluation failures are handled by `on_error`.
+
+These paths are part of the graph and are validated like normal transition targets.
+All states must be reachable from `initial` through normal or exceptional edges.
 
 ## Portable tracker operations
 
-Workflow packs may require these provider-independent operations:
+Workflow metadata may require these provider-independent operations:
 
 - `issue.list_ready`
 - `issue.read`
@@ -44,9 +97,6 @@ Workflow packs may require these provider-independent operations:
 - `issue.add_dependency`
 - `issue.remove_dependency`
 - `issue.close`
-
-Workflow packs may also request composed actions:
-
 - `issue.claim`
 - `issue.set_phase`
 - `issue.comment`
@@ -56,17 +106,9 @@ Workflow packs may also request composed actions:
 
 `issue.set_status` and `issue.set_phase` accept workflow-defined strings.
 `issue.close` accepts `completed`, `duplicate`, `superseded`, or `cancelled`.
-Tracker packs specify how
-each operation and phase is represented by the selected tracker.
-
 Provider-specific extensions use a provider namespace, such as
 `github.request_review`.
 
-## Tool binding
-
-Tracker packs describe operations but do not install skills or MCP servers.
-The user selects the actual tracker tool and replaces the
-`<<DAIK:TRACKER_TOOL>>` placeholder in `.agents/daik-tracker.md`.
-
-The tracker document front matter records its `tracker_pack` and `provides`
-capabilities. Its Markdown body maps portable actions to provider operations.
+The selected tracker pack describes the concrete mappings in
+`.agents/daik-tracker.md`. It does not choose or install a CLI, skill, or MCP server;
+the user supplies that binding.

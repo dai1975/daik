@@ -235,7 +235,7 @@ daik reserves names and roles only for the following elements:
 my-site/
 ├── AGENTS.md
 ├── .agents/
-│   ├── daik-workflow.md
+│   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
 │   ├── daik-workflow-spec.md
@@ -259,11 +259,12 @@ Instead, daik writes suggested additions to
 replace `<<DAIK:WORKSPACE_GUIDE>>` with site-specific guidance. Explanations of
 the template itself and instructions for the user remain outside the copy block.
 
-#### `.agents/daik-workflow.md`
+#### `.agents/daik-workflow.yaml`
 
-This file defines the provider-independent development process from receiving
-an issue through completion or handoff to a human. Its front matter records the
-selected packs, phases, and required issue actions in a machine-readable form.
+This file defines the provider-independent development process as a deterministic
+state machine. The graph declares every possible transition; agents evaluate its
+natural-language conditions but cannot invent or skip states. It also records the
+selected packs and required issue actions in a machine-readable form.
 
 After `init` creates it, the user owns it and may adapt it to the site. Its file
 contract is defined in `.agents/daik-workflow-spec.md`. For the concrete
@@ -309,7 +310,7 @@ do not destroy user changes.
 | --- | --- | --- | --- |
 | `AGENTS.md` | Agent instructions | User | Incorporate the copy block and document the site |
 | `.daik/daik-AGENTS.md.template` | Integration guide | daik | Use only the copy block |
-| `.agents/daik-workflow.md` | Workflow | User | Review and customize the process |
+| `.agents/daik-workflow.yaml` | Workflow | User | Review and customize the process |
 | `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
 | `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
@@ -353,7 +354,7 @@ site.
 
 The orchestrator manages issue selection, concurrency, retries, stopping, and
 the workspace lifecycle. Concrete issue-processing policy lives in
-`.agents/daik-workflow.md` and `.agents/daik-tracker.md`, keeping site-specific
+`.agents/daik-workflow.yaml` and `.agents/daik-tracker.md`, keeping site-specific
 knowledge out of the orchestrator itself.
 
 ### Packs
@@ -375,7 +376,7 @@ templates/
 
 - A base pack provides site-wide instructions such as suggested additions to
   `AGENTS.md`
-- A workflow pack defines the process, phases, and required tracker actions
+- A workflow pack defines the state machine, agent profiles, and required tracker actions
 - A tracker pack defines how abstract actions are implemented with a provider
   such as GitHub Issues
 

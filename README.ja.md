@@ -219,7 +219,7 @@ daikが名前と役割を規定するのは、次の要素だけです。
 my-site/
 ├── AGENTS.md
 ├── .agents/
-│   ├── daik-workflow.md
+│   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
 │   ├── daik-workflow-spec.md
@@ -243,11 +243,12 @@ template内の`DAIK:COPY:BEGIN`と`DAIK:COPY:END`で囲まれた部分だけを�
 置き換えます。template自身の説明とユーザーへの記述ガイドはコピー範囲の外に
 置かれます。
 
-#### `.agents/daik-workflow.md`
+#### `.agents/daik-workflow.yaml`
 
 Issueを受け取ってから作業を完了または人間へ引き渡すまでの、provider非依存の
-開発プロセスを定義します。front matterには選択したpack、使用するphase、必要な
-issue actionを機械可読な形で記録します。
+開発プロセスを決定的な状態機械として定義します。遷移候補はすべて事前に列挙し、
+agentは自然言語の条件を評価しますが、状態の追加やskipはできません。選択したpackと
+必要なissue actionも機械可読な形で記録します。
 
 初回の`init`で作成された後はユーザーが所有し、siteに合うように変更します。
 ファイル形式の契約は`.agents/daik-workflow-spec.md`に定義します。tracker上で
@@ -292,7 +293,7 @@ eventを読んでから作業を継続します。
 | --- | --- | --- | --- |
 | `AGENTS.md` | Agent instructions | User | copy blockを取り込み、site情報を書く |
 | `.daik/daik-AGENTS.md.template` | Integration guide | daik | copy blockだけを使用する |
-| `.agents/daik-workflow.md` | Workflow | User | 作業手順を確認・編集する |
+| `.agents/daik-workflow.yaml` | Workflow | User | 作業手順を確認・編集する |
 | `.agents/daik-tracker.md` | Tracker guide | User | 操作mappingとplaceholderを確認・編集する |
 | `.agents/daik-config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
@@ -335,7 +336,7 @@ workflowを重視します。
 
 オーケストレーターはIssueの選択、同時実行数、再試行、停止、workspaceの
 ライフサイクルを管理します。Issueの具体的な処理方法は
-`.agents/daik-workflow.md`と`.agents/daik-tracker.md`に置き、site固有の知識を
+`.agents/daik-workflow.yaml`と`.agents/daik-tracker.md`に置き、site固有の知識を
 オーケストレーター本体へ組み込みません。
 
 ### Packs
@@ -356,7 +357,7 @@ templates/
 ```
 
 - base packは`AGENTS.md`への追記案など、site共通の指示を提供する
-- workflow packは作業手順、phase、必要なtracker操作を定義する
+- workflow packは状態機械、agent profile、必要なtracker操作を定義する
 - tracker packは抽象的な操作をGitHub Issuesなどでどう実現するか定義する
 
 workflow packの`requires`とtracker packの`provides`は`issue.read`、

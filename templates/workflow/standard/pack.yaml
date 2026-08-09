@@ -18,14 +18,6 @@ languages:
   - ja
   - en
 
-# Ordered workflow phase names written into daik-workflow.md front matter.
-# A tracker must be able to store arbitrary values passed to issue.set_phase.
-phases:
-  - implementation
-  - testing
-  - review
-  - pull-request
-
 # Portable issue actions used by this workflow. The selected tracker pack must
 # list every action below in its `provides` section.
 requires:
@@ -37,9 +29,8 @@ requires:
   - issue.block
   - issue.complete
 
-# Localized provider-independent workflow instructions. Source paths are
-# relative to this pack directory.
+# Localized deterministic workflow state machines.
 contributions:
   workflow:
-    ja: workflow/ja.md
-    en: workflow/en.md
+    ja: workflow/ja.yaml
+    en: workflow/en.yaml

@@ -1,0 +1,163 @@
+# workflow schemaの識別子。`site validate`が文書とgraphを検査する。
+api_version: daik.dev/v1alpha1
+kind: coding-workflow
+initial: implementation
+
+# workflow全体の実行上限と、上限到達時の遷移先。
+limits:
+  max_transitions: 20
+  on_limit: await_human
+
+# 再利用するprofile。agent stateへ入るたびに新しいagent invocationを開始する。
+agents:
+  implementer:
+    role: implementation
+    instructions: |
+      Issueを満たす最小限の変更を実装する。既存設計を尊重し、必要なtestを追加し、
+      判断とriskをhandoffへ記録する。
+  tester:
+    role: testing
+    instructions: |
+      実装とは独立した立場で検証する。関連する自動checkを実行し、scopeを暗黙に
+      変更せず、再現可能なfailureを報告する。
+  reviewer:
+    role: review
+    instructions: |
+      correctness、test、保守性、security、scopeを独立した立場でreviewする。
+      未解決のblocking findingがあれば変更を要求する。
+
+# stateと許可する全遷移。自然言語の`when`はagentが評価し、`otherwise`は
+# 必須のfallbackとして使う。
+states:
+  implementation:
+    type: agent
+    agent: implementer
+    max_visits: 3
+    task: |
+      Issue、最新のworkspace event、handoff eventを読み、割り当てられたworktreeで
+      要求された変更とtestを実装する。
+    transitions:
+      ready_for_testing:
+        to: testing
+        when: |
+          要求された実装と、それを検証するために必要なtestが独立したtest工程へ
+          渡せる状態まで完了している。
+      needs_human:
+        to: await_human
+        when: |
+          要求、編集範囲、productまたはdesign判断について、人間の指示がなければ
+          実装を継続できない。
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  testing:
+    type: agent
+    agent: tester
+    max_visits: 3
+    task: |
+      実装handoffとdiffを読み、関連する自動testとproject固有のvalidationを行う。
+    transitions:
+      tests_passed:
+        to: review
+        when: |
+          必要なvalidationが成功し、test工程で判明したblocking problemが残っていない。
+      changes_required:
+        to: implementation
+        when: |
+          再現可能なfailureがあり、再度の実装で修正できる。failureと再現手順を
+          handoffへ記録する。
+      needs_human:
+        to: await_human
+        when: |
+          validationに利用できないinfraまたは人間の判断が必要である。
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  review:
+    type: agent
+    agent: reviewer
+    max_visits: 3
+    task: |
+      実装、diff、validation evidence、acceptance criteriaをreviewし、blocking findingを
+      全てhandoffへ記録する。
+    transitions:
+      approved:
+        to: pull_request
+        when: |
+          blocking findingが残っておらず、acceptance criteriaを満たしている。
+      changes_requested:
+        to: implementation
+        when: |
+          再度の実装で修正可能な具体的blocking findingが一つ以上ある。
+      needs_human:
+        to: await_human
+        when: |
+          agentが行ってはならないproduct、policy、design判断にapprovalが依存する。
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  pull_request:
+    type: agent
+    agent: implementer
+    max_visits: 1
+    task: |
+      Pull Requestまたは同等の成果物を作成・更新し、Issueへlinkし、最終validationと
+      artifact URLを記録する。
+    transitions:
+      published:
+        to: completed
+        when: |
+          Pull Requestまたは設定された同等成果物が公開され、Issueへlinkされている。
+      needs_human:
+        to: await_human
+        when: |
+          permission、policy、必要な人間の操作により公開できない。
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  await_human:
+    type: human
+    prompt: |
+      質問、関連evidence、明示的な選択肢をIssueへ記録し、人間の回答を待つ。
+    transitions:
+      resume_implementation:
+        to: implementation
+        when: |
+          人間が方針を回答し、作業再開を指示した。
+      cancel:
+        to: cancelled
+        when: |
+          人間が明示的に作業をcancelした。
+      otherwise:
+        to: failed
+        otherwise: true
+
+  completed:
+    type: final
+    outcome: success
+  cancelled:
+    type: final
+    outcome: cancelled
+  failed:
+    type: final
+    outcome: failure

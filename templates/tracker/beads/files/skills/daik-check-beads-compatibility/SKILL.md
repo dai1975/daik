@@ -14,7 +14,7 @@ the user in `.agents/daik-tracker.md`.
 1. Confirm that `.agents/daik-config.yaml` selects `daik.tracker.beads`.
 2. Read `.daik/beads-spec.md`. This explicit user request authorizes reading
    that otherwise-internal file; do not inspect unrelated `.daik/` content.
-3. Read `.agents/daik-workflow.md` for its phases and
+3. Read `.agents/daik-workflow.yaml` for its states and portable actions, and
    `.agents/daik-tracker.md` for the configured Beads access method.
 4. Obtain the Beads implementation version through that access method. If the
    method exposes no version, record it as `UNKNOWN`; do not substitute a local
@@ -26,7 +26,7 @@ the user in `.agents/daik-tracker.md`.
    a user could authorize separately.
 7. Report the installed version, reference version, and one `PASS`, `FAIL`, or
    `UNKNOWN` result for each requirement group: statuses, custom workflow
-   phases, assignment/claim, labels, dependencies, append-only discussion,
+   workflow-state values, assignment/claim, labels, dependencies, append-only discussion,
    artifact links, close reason metadata, ready selection, and close behavior.
 8. Finish with an overall result: `FAIL` if any group fails, `UNKNOWN` if none
    fail but any are unknown, otherwise `PASS`.

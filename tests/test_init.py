@@ -45,7 +45,7 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".daik/daik-AGENTS.md.template").is_file())
         self.assertTrue((root / ".daik/AGENTS.md").is_file())
         self.assertEqual((root / ".daik/.ignore").read_text(encoding="utf-8"), "*\n")
-        self.assertTrue((root / ".agents/daik-workflow.md").is_file())
+        self.assertTrue((root / ".agents/daik-workflow.yaml").is_file())
         self.assertTrue((root / ".agents/daik-config.yaml").is_file())
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
@@ -67,17 +67,19 @@ class InitTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            manifest["files"][".agents/daik-workflow.md"]["owner"], "user"
+            manifest["files"][".agents/daik-workflow.yaml"]["owner"], "user"
         )
-        workflow = (root / ".agents/daik-workflow.md").read_text(encoding="utf-8")
+        workflow = (root / ".agents/daik-workflow.yaml").read_text(encoding="utf-8")
         tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
         self.assertIn('workflow_pack: "daik.workflow.standard"', workflow)
         self.assertIn('tracker_instructions: ".agents/daik-tracker.md"', workflow)
         self.assertIn("  artifact: workflow", workflow)
         self.assertIn("  user_action: review-and-customize", workflow)
-        self.assertIn('    - "implementation"', workflow)
         self.assertIn('    - "issue.set_phase"', workflow)
-        self.assertIn("# 標準Issueワークフロー", workflow)
+        self.assertIn("api_version: daik.dev/v1alpha1", workflow)
+        self.assertIn("initial: implementation", workflow)
+        self.assertIn("type: agent", workflow)
+        self.assertIn("otherwise: true", workflow)
         self.assertNotIn("## GitHub Issues tracker mapping", workflow)
         self.assertIn('artifact: tracker', tracker)
         self.assertIn('tracker_pack: "daik.tracker.github-issues"', tracker)
@@ -104,16 +106,16 @@ class InitTests(unittest.TestCase):
     def test_repeated_init_preserves_user_files(self) -> None:
         root = self.make_workspace()
         self.run_daik(root, "site", "init", "--wet-run")
-        workflow = root / ".agents/daik-workflow.md"
+        workflow = root / ".agents/daik-workflow.yaml"
         workflow.write_text("custom workflow\n", encoding="utf-8")
 
         result = self.run_daik(root, "site", "init", "--wet-run")
 
         self.assertEqual(workflow.read_text(encoding="utf-8"), "custom workflow\n")
-        self.assertIn("Kept: .agents/daik-workflow.md", result.stdout)
+        self.assertIn("Kept: .agents/daik-workflow.yaml", result.stdout)
         manifest = json.loads((root / ".daik/manifest.json").read_text())
         self.assertEqual(
-            manifest["files"][".agents/daik-workflow.md"]["state"], "modified"
+            manifest["files"][".agents/daik-workflow.yaml"]["state"], "modified"
         )
 
     def test_existing_agents_md_is_not_modified(self) -> None:
@@ -130,7 +132,7 @@ class InitTests(unittest.TestCase):
 
         result = self.run_daik(root, "site", "init")
 
-        self.assertIn("Would create: .agents/daik-workflow.md", result.stdout)
+        self.assertIn("Would create: .agents/daik-workflow.yaml", result.stdout)
         self.assertIn("Preview only", result.stdout)
         self.assertFalse((root / ".agents").exists())
         self.assertFalse((root / "workspaces").exists())
@@ -192,17 +194,17 @@ class InitTests(unittest.TestCase):
 
         self.run_daik(root, "site", "init", "--lang", "en", "--wet-run")
 
-        workflow = (root / ".agents/daik-workflow.md").read_text(encoding="utf-8")
+        workflow = (root / ".agents/daik-workflow.yaml").read_text(encoding="utf-8")
         tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
         agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
-        self.assertIn("# Standard issue workflow", workflow)
+        self.assertIn("Implement the smallest change", workflow)
         self.assertIn("## GitHub Issues tracker mapping", tracker)
         self.assertIn("## Issue-driven development", agents)
 
     def test_reinit_with_different_selection_is_rejected(self) -> None:
         root = self.make_workspace()
         self.run_daik(root, "site", "init", "--lang", "ja", "--wet-run")
-        workflow = root / ".agents/daik-workflow.md"
+        workflow = root / ".agents/daik-workflow.yaml"
         original = workflow.read_text(encoding="utf-8")
 
         result = self.run_daik(
@@ -239,7 +241,7 @@ class InitTests(unittest.TestCase):
             (root / ".agents/skills/daik-check-beads-compatibility/SKILL.md").is_file()
         )
         (root / "AGENTS.md").write_text(
-            "Read .agents/daik-workflow.md and .agents/daik-tracker.md.\n",
+            "Read .agents/daik-workflow.yaml and .agents/daik-tracker.md.\n",
             encoding="utf-8",
         )
         tracker_path = root / ".agents/daik-tracker.md"
@@ -272,8 +274,6 @@ name:
 languages:
   - ja
   - en
-phases:
-  - custom
 requires:
   - issue.unsupported
 contributions:

@@ -1,0 +1,170 @@
+# Workflow schema identity. `site validate` checks this document and its graph.
+api_version: daik.dev/v1alpha1
+kind: coding-workflow
+initial: implementation
+
+# Global execution bound and the declared exceptional destination.
+limits:
+  max_transitions: 20
+  on_limit: await_human
+
+# Reusable profiles. A fresh invocation is started on every agent-state entry.
+agents:
+  implementer:
+    role: implementation
+    instructions: |
+      Implement the smallest change that satisfies the issue. Preserve existing
+      design, add necessary tests, and record decisions and risks in the handoff.
+  tester:
+    role: testing
+    instructions: |
+      Validate the implementation independently. Run the relevant automated
+      checks and report reproducible failures without silently changing scope.
+  reviewer:
+    role: review
+    instructions: |
+      Review independently for correctness, tests, maintainability, security,
+      and scope. Treat unresolved blocking findings as changes requested.
+
+# State names and all allowed outgoing transitions. Natural-language `when`
+# conditions are evaluated by the agent; `otherwise` is the required fallback.
+states:
+  implementation:
+    type: agent
+    agent: implementer
+    max_visits: 3
+    task: |
+      Read the issue and latest workspace and handoff events. Implement the
+      requested change and its tests in the assigned worktree.
+    transitions:
+      ready_for_testing:
+        to: testing
+        when: |
+          The requested implementation and the tests needed to validate it are
+          complete enough for an independent test pass.
+      needs_human:
+        to: await_human
+        when: |
+          Requirements, edit scope, or a product or design decision require
+          human direction before implementation can continue.
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  testing:
+    type: agent
+    agent: tester
+    max_visits: 3
+    task: |
+      Read the implementation handoff, inspect the diff, and run the relevant
+      automated and project-specific validation.
+    transitions:
+      tests_passed:
+        to: review
+        when: |
+          Required validation succeeds and no test-level blocking problem
+          remains.
+      changes_required:
+        to: implementation
+        when: |
+          A reproducible failure can be corrected by another implementation
+          pass. Record the failure and reproduction steps in the handoff.
+      needs_human:
+        to: await_human
+        when: |
+          Validation requires unavailable infrastructure or human judgment.
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  review:
+    type: agent
+    agent: reviewer
+    max_visits: 3
+    task: |
+      Review the implementation, diff, validation evidence, and acceptance
+      criteria. Record every blocking finding in the handoff.
+    transitions:
+      approved:
+        to: pull_request
+        when: |
+          No blocking finding remains and the acceptance criteria are met.
+      changes_requested:
+        to: implementation
+        when: |
+          One or more concrete blocking findings can be addressed by another
+          implementation pass.
+      needs_human:
+        to: await_human
+        when: |
+          Approval depends on a product, policy, or design decision that an
+          agent must not make.
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  pull_request:
+    type: agent
+    agent: implementer
+    max_visits: 1
+    task: |
+      Create or update the pull request, link it to the issue, and record the
+      final validation and artifact URLs.
+    transitions:
+      published:
+        to: completed
+        when: |
+          The pull request or configured equivalent artifact is published and
+          linked to the issue.
+      needs_human:
+        to: await_human
+        when: |
+          Publication is blocked by permissions, policy, or a required human
+          action.
+      otherwise:
+        to: failed
+        otherwise: true
+    on_error:
+      to: failed
+    on_limit:
+      to: await_human
+
+  await_human:
+    type: human
+    prompt: |
+      Record the question, relevant evidence, and explicit choices in the issue,
+      then wait for a human response.
+    transitions:
+      resume_implementation:
+        to: implementation
+        when: |
+          The human response supplies direction and requests that work resume.
+      cancel:
+        to: cancelled
+        when: |
+          The human explicitly cancels the work.
+      otherwise:
+        to: failed
+        otherwise: true
+
+  completed:
+    type: final
+    outcome: success
+  cancelled:
+    type: final
+    outcome: cancelled
+  failed:
+    type: final
+    outcome: failure

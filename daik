@@ -18,13 +18,17 @@ from typing import Any, Final
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.6.0"
+VERSION: Final = "0.7.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
 
 class DaikError(Exception):
     """Expected command-line error."""
+
+
+def positive_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 @dataclass(frozen=True)
@@ -78,14 +82,45 @@ def parse_scalar(value: str, source: Path, line_number: int) -> Any:
 def parse_yaml_subset_text(content: str, source: Path) -> dict[str, Any]:
     """Parse the dependency-free YAML subset used by daik documents."""
     logical_lines: list[tuple[int, int, str]] = []
-    for line_number, raw_line in enumerate(content.splitlines(), start=1):
+    physical_lines = content.splitlines()
+    index = 0
+    while index < len(physical_lines):
+        raw_line = physical_lines[index]
+        line_number = index + 1
         if "\t" in raw_line:
             raise DaikError(f"{source}:{line_number}: tabs are not allowed")
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
+            index += 1
             continue
         indent = len(raw_line) - len(raw_line.lstrip(" "))
+        text = raw_line[indent:]
+        if ":" in text and text.split(":", 1)[1].strip() in {"|", "|-", "|+"}:
+            key = text.split(":", 1)[0].strip()
+            block_lines: list[str] = []
+            index += 1
+            block_indent: int | None = None
+            while index < len(physical_lines):
+                block_line = physical_lines[index]
+                if "\t" in block_line:
+                    raise DaikError(f"{source}:{index + 1}: tabs are not allowed")
+                if block_line.strip():
+                    current_indent = len(block_line) - len(block_line.lstrip(" "))
+                    if current_indent <= indent:
+                        break
+                    if block_indent is None:
+                        block_indent = current_indent
+                    block_lines.append(block_line[min(block_indent, len(block_line)) :])
+                else:
+                    block_lines.append("")
+                index += 1
+            value = "\n".join(block_lines)
+            if text.split(":", 1)[1].strip() != "|-":
+                value += "\n"
+            logical_lines.append((line_number, indent, f"{key}: {json.dumps(value)}"))
+            continue
         logical_lines.append((line_number, indent, raw_line[indent:]))
+        index += 1
 
     if not logical_lines:
         raise DaikError(f"empty YAML document: {source}")
@@ -175,9 +210,6 @@ def validate_pack(pack: Pack) -> None:
         raise DaikError(f"{pack.path}: languages must not be empty")
     string_list(pack.data, "requires", pack.path)
     string_list(pack.data, "provides", pack.path)
-    phases = string_list(pack.data, "phases", pack.path)
-    if pack.kind == "workflow" and not phases:
-        raise DaikError(f"{pack.path}: workflow phases must not be empty")
     mapping(pack.data, "contributions", pack.path)
     mapping(pack.data, "files_user", pack.path)
     mapping(pack.data, "files_daik", pack.path)
@@ -385,10 +417,8 @@ def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str,
     )
     workflow = selected[1]
     tracker = selected[2]
-    phases = string_list(workflow.data, "phases", workflow.path)
     actions = string_list(workflow.data, "requires", workflow.path)
     workflow_header_lines = [
-        "---",
         "daik:",
         "  schema_version: 1",
         "  artifact: workflow",
@@ -398,17 +428,18 @@ def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str,
         f"  workflow_pack: {json.dumps(workflow.id)}",
         f"  tracker_pack: {json.dumps(tracker.id)}",
         '  tracker_instructions: ".agents/daik-tracker.md"',
-        "  phases:",
-        *(f"    - {json.dumps(phase)}" for phase in phases),
         "  issue_actions:",
         *(f"    - {json.dumps(action)}" for action in actions),
-        "---",
         "",
     ]
     workflow_header = "\n".join(workflow_header_lines) + "\n"
-    templates[".agents/daik-workflow.md"] = (
+    if len(workflow_parts) != 1:
+        raise DaikError("selected workflow must provide exactly one YAML document")
+    workflow_content = workflow_header + workflow_parts[0].rstrip() + "\n"
+    parse_yaml_subset_text(workflow_content, workflow.path / "generated-workflow.yaml")
+    templates[".agents/daik-workflow.yaml"] = (
         "user",
-        workflow_header + "\n\n".join(workflow_parts).rstrip() + "\n",
+        workflow_content,
     )
     tracker_actions = string_list(tracker.data, "provides", tracker.path)
     tracker_header_lines = [
@@ -564,7 +595,7 @@ def init_workspace(args: argparse.Namespace) -> int:
     if args.wet_run:
         print("Next: replace <<DAIK:WORKSPACE_GUIDE>> in the copied AGENTS.md block")
         print("Next: review .agents/daik-config.yaml")
-        print("Next: review .agents/daik-workflow.md")
+        print("Next: review .agents/daik-workflow.yaml")
         print("Next: review .agents/daik-tracker.md and replace <<DAIK:TRACKER_TOOL>>")
     return 0
 
@@ -657,6 +688,134 @@ class SiteValidator:
         if "<<DAIK:" in content:
             self.report("ERROR", relative, "contains an unresolved <<DAIK:...>> placeholder")
 
+    def validate_workflow(self, root: dict[str, Any]) -> dict[str, Any]:
+        relative = ".agents/daik-workflow.yaml"
+        metadata = root.get("daik")
+        expected = {
+            "schema_version": 1,
+            "artifact": "workflow",
+            "ownership": "user",
+            "user_action": "review-and-customize",
+        }
+        if not isinstance(metadata, dict):
+            self.report("ERROR", relative, "daik must be a mapping")
+            metadata = {}
+        for key, value in expected.items():
+            if metadata.get(key) != value:
+                self.report("ERROR", relative, f"daik.{key} must be {value!r}")
+
+        if root.get("api_version") != "daik.dev/v1alpha1":
+            self.report("ERROR", relative, "api_version must be 'daik.dev/v1alpha1'")
+        if root.get("kind") != "coding-workflow":
+            self.report("ERROR", relative, "kind must be 'coding-workflow'")
+        limits = root.get("limits")
+        if not isinstance(limits, dict) or not positive_integer(limits.get("max_transitions")):
+            self.report("ERROR", relative, "limits.max_transitions must be a positive integer")
+
+        profiles = root.get("agents")
+        if not isinstance(profiles, dict) or not profiles:
+            self.report("ERROR", relative, "agents must be a non-empty mapping")
+            profiles = {}
+        else:
+            for name, profile in profiles.items():
+                if not isinstance(profile, dict):
+                    self.report("ERROR", relative, f"agents.{name} must be a mapping")
+                    continue
+                for key in ("role", "instructions"):
+                    if not isinstance(profile.get(key), str) or not profile[key].strip():
+                        self.report("ERROR", relative, f"agents.{name}.{key} must be a non-empty string")
+
+        states = root.get("states")
+        if not isinstance(states, dict) or not states:
+            self.report("ERROR", relative, "states must be a non-empty mapping")
+            return metadata
+        if not isinstance(limits, dict) or not isinstance(limits.get("on_limit"), str):
+            self.report("ERROR", relative, "limits.on_limit must name an existing state")
+        elif limits["on_limit"] not in states:
+            self.report("ERROR", relative, "limits.on_limit must name an existing state")
+        initial = root.get("initial")
+        if not isinstance(initial, str) or initial not in states:
+            self.report("ERROR", relative, "initial must name an existing state")
+
+        edges: dict[str, set[str]] = {str(name): set() for name in states}
+        outcomes: set[str] = set()
+        for name, state in states.items():
+            prefix = f"states.{name}"
+            if not isinstance(state, dict):
+                self.report("ERROR", relative, f"{prefix} must be a mapping")
+                continue
+            state_type = state.get("type")
+            if state_type not in {"agent", "human", "final"}:
+                self.report("ERROR", relative, f"{prefix}.type must be agent, human, or final")
+                continue
+            if state_type == "final":
+                outcome = state.get("outcome")
+                if outcome not in {"success", "failure", "cancelled"}:
+                    self.report("ERROR", relative, f"{prefix}.outcome must be success, failure, or cancelled")
+                else:
+                    outcomes.add(outcome)
+                if "transitions" in state:
+                    self.report("ERROR", relative, f"{prefix} final state must not define transitions")
+                continue
+
+            if state_type == "agent":
+                profile = state.get("agent")
+                if not isinstance(profile, str) or profile not in profiles:
+                    self.report("ERROR", relative, f"{prefix}.agent must reference an agents entry")
+                if not isinstance(state.get("task"), str) or not state["task"].strip():
+                    self.report("ERROR", relative, f"{prefix}.task must be a non-empty string")
+                if not positive_integer(state.get("max_visits")):
+                    self.report("ERROR", relative, f"{prefix}.max_visits must be a positive integer")
+                for handler in ("on_error", "on_limit"):
+                    value = state.get(handler)
+                    if not isinstance(value, dict) or not isinstance(value.get("to"), str):
+                        self.report("ERROR", relative, f"{prefix}.{handler}.to is required")
+                    elif value["to"] not in states:
+                        self.report("ERROR", relative, f"{prefix}.{handler}.to names an unknown state")
+                    else:
+                        edges[str(name)].add(value["to"])
+            elif not isinstance(state.get("prompt"), str) or not state["prompt"].strip():
+                self.report("ERROR", relative, f"{prefix}.prompt must be a non-empty string")
+
+            transitions = state.get("transitions")
+            if not isinstance(transitions, dict) or not transitions:
+                self.report("ERROR", relative, f"{prefix}.transitions must be a non-empty mapping")
+                continue
+            otherwise_count = 0
+            for transition_name, transition in transitions.items():
+                item = f"{prefix}.transitions.{transition_name}"
+                if not isinstance(transition, dict):
+                    self.report("ERROR", relative, f"{item} must be a mapping")
+                    continue
+                target = transition.get("to")
+                if not isinstance(target, str) or target not in states:
+                    self.report("ERROR", relative, f"{item}.to must name an existing state")
+                else:
+                    edges[str(name)].add(target)
+                has_when = isinstance(transition.get("when"), str) and bool(transition["when"].strip())
+                has_otherwise = transition.get("otherwise") is True
+                if has_when == has_otherwise:
+                    self.report("ERROR", relative, f"{item} must define exactly one of when or otherwise: true")
+                otherwise_count += int(has_otherwise)
+            if otherwise_count != 1:
+                self.report("ERROR", relative, f"{prefix}.transitions must contain exactly one otherwise fallback")
+
+        for outcome in ("success", "failure", "cancelled"):
+            if outcome not in outcomes:
+                self.report("ERROR", relative, f"workflow must define a final state with outcome {outcome}")
+        if isinstance(initial, str) and initial in states:
+            reachable: set[str] = set()
+            pending = [initial]
+            while pending:
+                name = pending.pop()
+                if name in reachable:
+                    continue
+                reachable.add(name)
+                pending.extend(edges.get(name, set()) - reachable)
+            for name in sorted(set(states) - reachable):
+                self.report("ERROR", relative, f"state {name!r} is unreachable from initial")
+        return metadata
+
     def validate(self) -> list[Diagnostic]:
         manifest_text = self.load_text(".daik/manifest.json")
         manifest: dict[str, Any] | None = None
@@ -669,9 +828,8 @@ class SiteValidator:
             except (json.JSONDecodeError, ValueError) as error:
                 self.report("ERROR", ".daik/manifest.json", f"invalid JSON: {error}")
 
-        workflow = self.document_metadata(
-            ".agents/daik-workflow.md", "workflow", "user", "review-and-customize"
-        )
+        workflow_document = self.load_yaml(".agents/daik-workflow.yaml")
+        workflow_meta = self.validate_workflow(workflow_document) if workflow_document else {}
         tracker = self.document_metadata(
             ".agents/daik-tracker.md", "tracker", "user", "review-and-customize"
         )
@@ -686,22 +844,19 @@ class SiteValidator:
 
         if agents is not None:
             self.check_placeholders("AGENTS.md", agents)
-            for reference in (".agents/daik-workflow.md", ".agents/daik-tracker.md"):
+            for reference in (".agents/daik-workflow.yaml", ".agents/daik-tracker.md"):
                 if reference not in agents:
                     self.report("ERROR", "AGENTS.md", f"does not reference {reference}")
-        for relative in (".agents/daik-workflow.md", ".agents/daik-tracker.md"):
+        for relative in (".agents/daik-workflow.yaml", ".agents/daik-tracker.md"):
             path = self.root / relative
             if path.is_file():
                 self.check_placeholders(relative, path.read_text(encoding="utf-8"))
 
-        workflow_meta = workflow[0] if workflow else {}
         tracker_meta = tracker[0] if tracker else {}
-        phases = workflow_meta.get("phases")
         actions = workflow_meta.get("issue_actions")
         provides = tracker_meta.get("provides")
         for relative, key, value in (
-            (".agents/daik-workflow.md", "phases", phases),
-            (".agents/daik-workflow.md", "issue_actions", actions),
+            (".agents/daik-workflow.yaml", "issue_actions", actions),
             (".agents/daik-tracker.md", "provides", provides),
         ):
             if not isinstance(value, list) or not value or not all(
@@ -721,13 +876,13 @@ class SiteValidator:
             if workflow_meta.get("tracker_pack") != tracker_meta.get("tracker_pack"):
                 self.report(
                     "ERROR",
-                    ".agents/daik-workflow.md",
+                    ".agents/daik-workflow.yaml",
                     "daik.tracker_pack does not match the tracker document",
                 )
             if workflow_meta.get("tracker_instructions") != ".agents/daik-tracker.md":
                 self.report(
                     "ERROR",
-                    ".agents/daik-workflow.md",
+                    ".agents/daik-workflow.yaml",
                     "daik.tracker_instructions must reference .agents/daik-tracker.md",
                 )
 

@@ -16,7 +16,7 @@ the user in `.agents/daik-tracker.md`.
 2. Read `.daik/github-issues-spec.md`. This explicit user request authorizes
    reading that otherwise-internal file; do not inspect unrelated `.daik/`
    content.
-3. Read `.agents/daik-workflow.md` for its phases and
+3. Read `.agents/daik-workflow.yaml` for its states and portable actions, and
    `.agents/daik-tracker.md` for the target repository and access method.
 4. Determine the GitHub product and API version exposed by that access method.
    If unavailable, record it as `UNKNOWN`; do not substitute a local `gh`

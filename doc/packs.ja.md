@@ -28,10 +28,6 @@ languages:
   - ja
   - en
 daik_config: daik-config/workflow.yaml
-phases:
-  - implementation
-  - testing
-  - review
 requires:
   - issue.read
   - issue.set_phase
@@ -40,8 +36,8 @@ provides:
   - example.optional-capability
 contributions:
   workflow:
-    ja: workflow/ja.md
-    en: workflow/en.md
+    ja: workflow/ja.yaml
+    en: workflow/en.yaml
 files_user:
   config/example.yaml: .agents/example.yaml
 files_daik:
@@ -59,7 +55,6 @@ files_daik:
 - `languages`: 提供する自然言語
 - `daik_config`: 生成される`.agents/daik-config.yaml`へ追加する、pack内相対pathの
   YAML fragment。省略可能
-- `phases`: workflowが使用する進行phase。workflow packでは必須
 - `requires`: workflowがtrackerへ要求するcapability
 - `provides`: trackerが実現するcapability
 - `contributions`: 言語別Markdown断片
@@ -79,7 +74,9 @@ list、文字列、整数、booleanからなる単純なYAMLに限定する。
 
 - `agents`: `.daik/daik-AGENTS.md.template`へ追加する
 - `internal`: `.daik/AGENTS.md`へ追加する
-- `workflow`: `.agents/daik-workflow.md`のworkflow部分へ追加する
+- `workflow`: 生成された`daik` metadataに続けて
+  `.agents/daik-workflow.yaml`へ配置する決定的状態機械の本体。単一のworkflow
+  packが単一のYAML文書を提供する
 - `tracker`: `.agents/daik-tracker.md`へ追加する
 
 値は言語とpack内相対パスのmappingである。指定言語がなく英語があれば英語へ

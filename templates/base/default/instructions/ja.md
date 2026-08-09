@@ -17,7 +17,7 @@ daik:
 <!-- DAIK:COPY:BEGIN -->
 ## daikによるIssue駆動開発
 
-Issue trackerから割り当てられた作業では、`.agents/daik-workflow.md`に定義された
+Issue trackerから割り当てられた作業では、`.agents/daik-workflow.yaml`に定義された
 プロセスに従ってください。このworkflowの書式と共通操作は
 `.agents/daik-workflow-spec.md`、daikの実行設定は`.agents/daik-config.yaml`に
 定義されています。runtime issue eventは`.agents/daik-issue-event-spec.md`に

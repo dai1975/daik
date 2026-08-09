@@ -18,7 +18,7 @@ Do not copy this entire file into `AGENTS.md`. Copy only the section enclosed by
 ## Issue-driven development with daik
 
 For work assigned through an issue tracker, follow the process defined in
-`.agents/daik-workflow.md`. Its format and portable operations are defined in
+`.agents/daik-workflow.yaml`. Its format and portable operations are defined in
 `.agents/daik-workflow-spec.md`, and daik runtime settings are stored in
 `.agents/daik-config.yaml`. Runtime issue events are defined in
 `.agents/daik-issue-event-spec.md`. Follow `.agents/daik-tracker.md` for concrete issue
