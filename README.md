@@ -118,6 +118,7 @@ daik work workspace list
 daik work workspace reconcile
 daik work workspace remove
 daik work handoff create
+daik work agent run
 ```
 
 - `site packs`: list available packs
@@ -126,6 +127,7 @@ daik work handoff create
 - `site doctor`: validate the contract and diagnose local tools and runtime readiness
 - `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
 - `work handoff create`: emit a structured event for the next agent role
+- `work agent run`: invoke one agent state and emit transition and handoff events
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -198,15 +200,36 @@ At a role boundary, generate a handoff event for the next agent:
 `workspace remove` previews by default and requires `--wet-run` to remove
 worktrees. It never deletes issue branches.
 
+Configure an external coding-agent adapter as an argv list. daik uses no shell; the
+adapter reads its prompt from stdin and returns one JSON result on stdout:
+
+```yaml
+agent:
+  command:
+    - codex
+    - exec
+    - -
+  timeout_seconds: 3600
+```
+
+Run exactly one workflow agent state:
+
+```sh
+./daik/daik work agent run github:backend#123 --state implementation
+```
+
+The command runs from the site root and prints newline-delimited `agent.started`,
+`agent.completed`, and `handoff` events. A tracker adapter must append these complete
+events to the issue. Agent or protocol failure instead emits `agent.failed`. See
+`.agents/daik-workflow-spec.md` for the result JSON contract.
+
 The following commands are planned:
 
 ```sh
-daik work run
 daik work watch
 daik work status
 ```
 
-- `work run`: fetch and process eligible issues
 - `work watch`: continuously monitor the issue tracker
 - `work status`: show running, retrying, and completed work
 

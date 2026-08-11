@@ -41,6 +41,25 @@ It records its results and a handoff event in the issue tracker before selecting
 transition. The issue tracker, not local daik state, is the durable source of run and
 handoff information.
 
+## External agent command
+
+`agent.command` in `.agents/daik-config.yaml` is a non-empty YAML sequence of argv
+values. The runner executes it directly without a shell, from the site root. It sends
+the invocation prompt on stdin and sets `DAIK_ISSUE`, `DAIK_STATE`, and
+`DAIK_AGENT_PROFILE`. A wrapper may use the profile name to select a provider-native
+role, subagent, model, or sandbox.
+
+The command writes exactly one JSON object and no other stdout text. It contains:
+
+- required strings: `transition`, `reason`, and `summary`
+- string lists: `evidence`, `commits`, `validation`, `decisions`, `risks`, and
+  `next_actions`; omitted lists are treated as empty
+
+The runner rejects undeclared transitions and malformed output. Successful execution
+emits newline-delimited `agent.started`, `agent.completed`, and `handoff` issue events.
+Execution or protocol failure emits `agent.started` and `agent.failed` and exits with
+status 1. The runner does not post events or store execution state locally.
+
 ## State types
 
 ### `agent`

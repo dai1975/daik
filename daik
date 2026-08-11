@@ -15,10 +15,11 @@ import sys
 import tempfile
 from typing import Any, Final
 
+from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.7.0"
+VERSION: Final = "0.8.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -983,10 +984,26 @@ class SiteValidator:
         if not isinstance(agent, dict):
             self.report("ERROR", relative, "agent must be a mapping")
         else:
-            for key in ("max_concurrent_agents", "max_turns", "max_retry_backoff_ms"):
+            for key in (
+                "max_concurrent_agents",
+                "max_turns",
+                "max_retry_backoff_ms",
+                "timeout_seconds",
+            ):
                 value = agent.get(key)
                 if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                     self.report("ERROR", relative, f"agent.{key} must be a positive integer")
+            command = agent.get("command")
+            if command is not None and (
+                not isinstance(command, list)
+                or not command
+                or not all(isinstance(item, str) and item for item in command)
+            ):
+                self.report(
+                    "ERROR",
+                    relative,
+                    "agent.command must be a non-empty list of command arguments",
+                )
         polling = config.get("polling")
         interval = polling.get("interval_ms") if isinstance(polling, dict) else None
         if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
@@ -1194,13 +1211,24 @@ def doctor_site(args: argparse.Namespace) -> int:
                 "run the daik-check-beads-compatibility skill when compatibility verification is required",
             )
         )
-    diagnostics.append(
-        Diagnostic(
-            "INFO",
-            "agent",
-            "coding-agent runtime is not configured in the current daik schema",
+    agent_settings = config.get("agent") if isinstance(config, dict) else None
+    agent_command = agent_settings.get("command") if isinstance(agent_settings, dict) else None
+    if not isinstance(agent_command, list) or not agent_command:
+        diagnostics.append(
+            Diagnostic(
+                "WARNING",
+                "agent",
+                "agent.command is not configured; work agent run is unavailable",
+            )
         )
-    )
+    elif shutil.which(agent_command[0]) is None:
+        diagnostics.append(
+            Diagnostic("ERROR", "agent", f"executable was not found on PATH: {agent_command[0]}")
+        )
+    else:
+        diagnostics.append(
+            Diagnostic("INFO", "agent", f"coding-agent command is available: {agent_command[0]}")
+        )
 
     order = {"ERROR": 0, "WARNING": 1, "INFO": 2}
     for diagnostic in sorted(diagnostics, key=lambda item: (order[item.severity], item.path, item.message)):
@@ -1302,6 +1330,35 @@ def work_handoff_create(args: argparse.Namespace) -> int:
     return 0
 
 
+def work_agent_run(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    config = load_site_config(root)
+    workflow_path = root / ".agents/daik-workflow.yaml"
+    if not workflow_path.is_file():
+        raise DaikError(f"required workflow is missing: {workflow_path}")
+    workflow = parse_yaml_subset(workflow_path)
+    diagnostics = SiteValidator(root).validate()
+    errors = [item for item in diagnostics if item.severity == "ERROR"]
+    if errors:
+        raise DaikError(
+            "site validation failed before agent execution: "
+            + "; ".join(f"{item.path}: {item.message}" for item in errors)
+        )
+    def emit(item: dict[str, Any]) -> None:
+        print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+
+    try:
+        AgentRunner(root, config, workflow).run(args.issue, args.state, emit)
+    except AgentExecutionError as error:
+        print(f"Agent run failed: {error}", file=sys.stderr)
+        return 1
+    except RunnerError as error:
+        raise DaikError(str(error)) from error
+    return 0
+
+
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template-dir",
@@ -1318,7 +1375,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage=(
             "%(prog)s [-h] [--version] <subcommand> ...\n"
             "       %(prog)s site <init | packs | validate | doctor> ...\n"
-            "       %(prog)s work <workspace | handoff> ..."
+            "       %(prog)s work <workspace | handoff | agent> ..."
         ),
         description="Issue-driven coding-agent workspace tools.",
     )
@@ -1428,6 +1485,20 @@ def build_parser() -> argparse.ArgumentParser:
     handoff_create_parser.add_argument("--risk", action="append", default=[])
     handoff_create_parser.add_argument("--next-action", action="append", default=[])
     handoff_create_parser.set_defaults(handler=work_handoff_create)
+
+    agent_parser = work_subparsers.add_parser(
+        "agent", help="run one coding-agent workflow state"
+    )
+    agent_subparsers = agent_parser.add_subparsers(
+        dest="agent_command", required=True, metavar="<agent-command>"
+    )
+    agent_run_parser = agent_subparsers.add_parser(
+        "run", help="invoke the configured coding agent for one state"
+    )
+    agent_run_parser.add_argument("issue", metavar="ISSUE")
+    agent_run_parser.add_argument("--state", required=True, metavar="STATE")
+    agent_run_parser.add_argument("--root", default=".", help="site root")
+    agent_run_parser.set_defaults(handler=work_agent_run)
     return parser
 
 

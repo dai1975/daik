@@ -108,6 +108,7 @@ daik work workspace list
 daik work workspace reconcile
 daik work workspace remove
 daik work handoff create
+daik work agent run
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
@@ -116,6 +117,7 @@ daik work handoff create
 - `site doctor`: 契約を検証し、local toolと実行環境を診断する
 - `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
+- `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -185,15 +187,36 @@ roleの境界では次のagent向けhandoff eventを生成します。
 `workspace remove`はdefaultでpreviewだけを行い、worktreeの削除には`--wet-run`が
 必要です。Issue branchは削除しません。
 
+外部coding-agent adapterをargvのlistとして設定します。daikはshellを使わず、
+adapterはstdinからpromptを読み、stdoutへ単一のJSON resultを返します。
+
+```yaml
+agent:
+  command:
+    - codex
+    - exec
+    - -
+  timeout_seconds: 3600
+```
+
+workflowのagent stateを一つだけ実行します。
+
+```sh
+./daik/daik work agent run github:backend#123 --state implementation
+```
+
+site rootでcommandを実行し、newline-delimitedの`agent.started`、
+`agent.completed`、`handoff` eventを出力します。tracker adapterはこれらのevent全体を
+Issueへ追記します。agentまたはprotocolの失敗時は`agent.failed`を出力します。
+result JSONの契約は`.agents/daik-workflow-spec.md`を参照してください。
+
 以下のコマンドは今後実装する予定です。
 
 ```sh
-daik work run
 daik work watch
 daik work status
 ```
 
-- `work run`: 実行可能なIssueを取得して処理する
 - `work watch`: Issue trackerを継続的に監視する
 - `work status`: 実行中、再試行待ち、完了した作業を表示する
 

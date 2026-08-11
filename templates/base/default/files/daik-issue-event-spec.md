@@ -32,8 +32,21 @@ Tracker packs define the provider-specific container used for the event.
 - `workspace.reconciled`: local state matched a previously recorded event
 - `workspace.removed`: worktrees were removed; branches were retained
 - `handoff`: one agent role handed work to another
-- `agent.started`, `validation`, `review`, `blocked`, `artifact.linked`, and
-  `completed`: reserved for orchestrator and agent-run events
+- `agent.started`: an agent-state invocation began
+- `agent.completed`: an invocation selected a declared transition
+- `agent.failed`: the command or its result protocol failed
+- `validation`, `review`, `blocked`, `artifact.linked`, and `completed`: reserved
+  for orchestrator and agent-run events
+
+## Agent-run data
+
+`agent.started` records `state`, `agent`, and `role`. `agent.completed` also records
+the selected `transition`, target state in `to`, natural-language `reason`, and an
+`evidence` list. The runner emits a `handoff` event after a successful invocation.
+
+`agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
+Runner events are output records for the tracker adapter to append; emitting an event
+does not itself persist it.
 
 ## Workspace data
 

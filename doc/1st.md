@@ -16,7 +16,13 @@
 - [x] Beads tracker mappingと互換性確認skill
 - [x] Issue ごとの workspace と Git worktree の管理
 - [x] Issue eventによるagent間handoff
-- [ ] coding agent runner
+- [x] coding agent runner
+- [ ] 共通agent contextとagent software adapterの設計・生成
+  ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
+- [ ] program orchestratorによるIssue stateとcontrol eventの管理
+  ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
+- [ ] LLMを使用しないworkflow `program` state
+  ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
 - [ ] polling、並行実行、再試行
 - [ ] structured logging と status 表示
 
