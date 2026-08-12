@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from daiklib.joints import ControlConflict, JointError, TrackerJoint
+from daiklib.program import ProgramRunner, ProgramRunnerError
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, event
 
@@ -64,6 +65,22 @@ def pending_agent_completion(
                 pending = data
         elif item.get("kind") == "agent.failed":
             pending = None
+    return pending
+
+
+def pending_program_completion(
+    issue: str, events: list[dict[str, Any]], state: str
+) -> dict[str, Any] | None:
+    pending: dict[str, Any] | None = None
+    for item in events:
+        if item.get("schema") != "daik.issue-event.v1" or item.get("issue") != issue:
+            continue
+        if item.get("kind") in {"workflow.started", "workflow.transitioned"}:
+            pending = None
+        elif item.get("kind") == "program.completed":
+            data = item.get("data")
+            if isinstance(data, dict) and data.get("state") == state:
+                pending = data
     return pending
 
 
@@ -205,6 +222,50 @@ class Orchestrator:
                 if emit:
                     emit(waiting)
                 return state_name
+            if state_type == "program":
+                if control.transitions >= self.max_transitions:
+                    transition_name = "global_limit"
+                    target = self.global_limit_target
+                    pending = None
+                else:
+                    pending = pending_program_completion(issue, history, state_name)
+                if control.transitions < self.max_transitions and pending is None:
+                    def capture_program(item: dict[str, Any]) -> None:
+                        nonlocal version
+                        version = self._commit(issue, version, [item], status=state_name)
+                        history.append(item)
+                        if emit:
+                            emit(item)
+
+                    try:
+                        result = ProgramRunner(self.site, self.config, self.workflow).run(
+                            issue, state_name, capture_program
+                        )
+                    except ProgramRunnerError as error:
+                        raise OrchestratorError(str(error)) from error
+                    pending = result.completed["data"]
+                if pending is not None:
+                    transition_name = pending.get("transition")
+                    transition = state["transitions"].get(transition_name)
+                    if (
+                        not isinstance(transition, dict)
+                        or transition.get("to") != pending.get("to")
+                    ):
+                        raise OrchestratorError(
+                            "recorded program completion is not valid for current state"
+                        )
+                    target = transition["to"]
+                control.transitions += 1
+                transitioned = self._transition_event(
+                    issue, state_name, transition_name, target, control.transitions
+                )
+                version = self._commit(issue, version, [transitioned], status=target)
+                if emit:
+                    emit(transitioned)
+                history.append(transitioned)
+                control.state = target
+                control.visits[target] = control.visits.get(target, 0) + 1
+                continue
             if state_type != "agent":
                 raise OrchestratorError(f"unsupported workflow state type: {state_type}")
 

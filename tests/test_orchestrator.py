@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from daiklib.orchestrator import pending_agent_completion
+from daiklib.orchestrator import pending_agent_completion, pending_program_completion
 from daiklib.workspaces import event
 
 
@@ -184,6 +184,46 @@ print(json.dumps({
         self.assertEqual(first, second)
         self.assertEqual(json.loads(result.stdout)["state"], "completed")
 
+    def test_runs_program_state_without_invoking_an_agent(self) -> None:
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        content = workflow.read_text(encoding="utf-8")
+        start = content.index("  testing:\n")
+        end = content.index("\n  review:\n", start)
+        program_state = f"""  testing:
+    type: program
+    command:
+      - {json.dumps(sys.executable)}
+      - -c
+      - print('program verified')
+    repository: backend
+    timeout_seconds: 30
+    transitions:
+      succeeded:
+        to: review
+      failed:
+        to: implementation
+      error:
+        to: await_human
+"""
+        workflow.write_text(content[:start] + program_state + content[end:], encoding="utf-8")
+
+        result = self.run_daik("work", "run", "github:backend#123")
+
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["state"], "completed")
+        tracker = json.loads((self.root / "tracker-state.json").read_text())
+        program_events = [
+            item for item in tracker["events"] if item["kind"].startswith("program.")
+        ]
+        self.assertEqual([item["kind"] for item in program_events], [
+            "program.started", "program.completed"
+        ])
+        self.assertEqual(program_events[1]["data"]["result"], "succeeded")
+        testing_agents = [
+            item for item in tracker["events"]
+            if item["kind"] == "agent.started" and item["data"]["state"] == "testing"
+        ]
+        self.assertEqual(testing_agents, [])
+
     def test_human_state_requires_declared_resume_transition(self) -> None:
         content = self.wrapper.read_text(encoding="utf-8")
         self.wrapper.write_text(
@@ -227,6 +267,27 @@ print(json.dumps({
             )
         )
         self.assertIsNone(pending_agent_completion(issue, history, "testing"))
+
+    def test_finds_uncommitted_program_completion_for_crash_recovery(self) -> None:
+        issue = "github:backend#123"
+        completion = event(
+            "program.completed",
+            issue,
+            {"state": "testing", "transition": "succeeded", "to": "review"},
+        )
+        history = [event("workflow.started", issue, {"state": "testing"}), completion]
+
+        self.assertEqual(
+            pending_program_completion(issue, history, "testing"), completion["data"]
+        )
+        history.append(
+            event(
+                "workflow.transitioned",
+                issue,
+                {"from": "testing", "transition": "succeeded", "to": "review"},
+            )
+        )
+        self.assertIsNone(pending_program_completion(issue, history, "review"))
 
 
 if __name__ == "__main__":

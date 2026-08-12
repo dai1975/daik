@@ -21,7 +21,7 @@ from daiklib.orchestrator import Orchestrator, OrchestratorError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.10.0"
+VERSION: Final = "0.11.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -723,8 +723,8 @@ class SiteValidator:
             self.report("ERROR", relative, "limits.max_transitions must be a positive integer")
 
         profiles = root.get("agents")
-        if not isinstance(profiles, dict) or not profiles:
-            self.report("ERROR", relative, "agents must be a non-empty mapping")
+        if not isinstance(profiles, dict):
+            self.report("ERROR", relative, "agents must be a mapping")
             profiles = {}
         else:
             for name, profile in profiles.items():
@@ -755,8 +755,10 @@ class SiteValidator:
                 self.report("ERROR", relative, f"{prefix} must be a mapping")
                 continue
             state_type = state.get("type")
-            if state_type not in {"agent", "human", "final"}:
-                self.report("ERROR", relative, f"{prefix}.type must be agent, human, or final")
+            if state_type not in {"agent", "program", "human", "final"}:
+                self.report(
+                    "ERROR", relative, f"{prefix}.type must be agent, program, human, or final"
+                )
                 continue
             if state_type == "final":
                 outcome = state.get("outcome")
@@ -784,6 +786,24 @@ class SiteValidator:
                         self.report("ERROR", relative, f"{prefix}.{handler}.to names an unknown state")
                     else:
                         edges[str(name)].add(value["to"])
+            elif state_type == "program":
+                command = state.get("command")
+                if (
+                    not isinstance(command, list)
+                    or not command
+                    or not all(isinstance(item, str) and item for item in command)
+                ):
+                    self.report(
+                        "ERROR", relative, f"{prefix}.command must be a non-empty argv list"
+                    )
+                if not isinstance(state.get("repository"), str) or not state["repository"]:
+                    self.report(
+                        "ERROR", relative, f"{prefix}.repository must be a non-empty string"
+                    )
+                if not positive_integer(state.get("timeout_seconds")):
+                    self.report(
+                        "ERROR", relative, f"{prefix}.timeout_seconds must be a positive integer"
+                    )
             elif not isinstance(state.get("prompt"), str) or not state["prompt"].strip():
                 self.report("ERROR", relative, f"{prefix}.prompt must be a non-empty string")
 
@@ -802,12 +822,24 @@ class SiteValidator:
                     self.report("ERROR", relative, f"{item}.to must name an existing state")
                 else:
                     edges[str(name)].add(target)
+                if state_type == "program":
+                    if set(transition) != {"to"}:
+                        self.report(
+                            "ERROR", relative, f"{item} may contain only to for a program state"
+                        )
+                    continue
                 has_when = isinstance(transition.get("when"), str) and bool(transition["when"].strip())
                 has_otherwise = transition.get("otherwise") is True
                 if has_when == has_otherwise:
                     self.report("ERROR", relative, f"{item} must define exactly one of when or otherwise: true")
                 otherwise_count += int(has_otherwise)
-            if otherwise_count != 1:
+            if state_type == "program" and set(transitions) != {"succeeded", "failed", "error"}:
+                self.report(
+                    "ERROR",
+                    relative,
+                    f"{prefix}.transitions must define exactly succeeded, failed, and error",
+                )
+            elif state_type != "program" and otherwise_count != 1:
                 self.report("ERROR", relative, f"{prefix}.transitions must contain exactly one otherwise fallback")
 
         for outcome in ("success", "failure", "cancelled"):
@@ -911,6 +943,20 @@ class SiteValidator:
 
         if config is not None:
             self.validate_config(config)
+            repositories = config.get("repositories")
+            states = workflow_document.get("states") if workflow_document else None
+            if isinstance(repositories, dict) and isinstance(states, dict):
+                for name, state in states.items():
+                    if (
+                        isinstance(state, dict)
+                        and state.get("type") == "program"
+                        and state.get("repository") not in repositories
+                    ):
+                        self.report(
+                            "ERROR",
+                            ".agents/daik-workflow.yaml",
+                            f"states.{name}.repository must reference a configured repository",
+                        )
             tracker_config = config.get("tracker")
             if (
                 tracker_meta

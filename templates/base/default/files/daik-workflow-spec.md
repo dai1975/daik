@@ -70,6 +70,19 @@ An agent state requires `agent`, `task`, `max_visits`, `transitions`, `on_error`
 when the invocation cannot evaluate normal transitions. `on_limit.to` is used before
 starting an invocation that would exceed `max_visits`.
 
+### `program`
+
+A program state runs one external command directly, without a shell or an LLM. It
+requires a non-empty `command` argv sequence, a configured `repository`, a positive
+`timeout_seconds`, and exactly three transitions named `succeeded`, `failed`, and
+`error`. Program transitions contain only `to`; they do not use natural-language
+selectors.
+
+The command runs in that repository's worktree for the current Issue. Exit status zero
+selects `succeeded`; another normal exit selects `failed`. Start failure, timeout, or
+an invalid working directory selects `error`. Full stdout and stderr remain in the
+external Invocation log directory. Issue events contain only bounded diagnostics.
+
 ### `human`
 
 A human state requires `prompt` and `transitions`. The runner records the request in
@@ -89,7 +102,7 @@ exactly one selector:
 - `when`: a non-empty natural-language condition
 - `otherwise: true`: the fallback when no `when` condition is satisfied
 
-Every non-final state has exactly one `otherwise` transition. The evaluating agent
+Every agent or human state has exactly one `otherwise` transition. The evaluating agent
 must select exactly one declared transition and return its name, rationale, and
 evidence. It must not invent a target, skip a state, or perform work belonging to the
 next state. If more than one `when` appears true, the agent must use `on_error` rather

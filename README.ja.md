@@ -234,6 +234,28 @@ tracker上のcurrent stateとcontrol eventが正本です。human stateでは停
 人間の判断をIssueへ記録した後、`--transition NAME`で宣言済みの遷移を選んで
 再開します。
 
+LLMを使わない決定論的な検証は、workflowの`program` stateで実行できます。
+commandはargvとして指定し、Issue workspace内の指定repositoryで直接実行します。
+
+```yaml
+testing:
+  type: program
+  command: [make, test]
+  repository: backend
+  timeout_seconds: 900
+  transitions:
+    succeeded:
+      to: review
+    failed:
+      to: implementation
+    error:
+      to: await_human
+```
+
+exit status 0は`succeeded`、通常の非0終了は`failed`、起動失敗やtimeoutは
+`error`を選びます。完全な出力はsite外のInvocation logに保存し、Issueには
+長さを制限した結果だけを記録します。
+
 以下のコマンドは今後実装する予定です。
 
 ```sh

@@ -247,6 +247,29 @@ The tracker retains the authoritative current state and control events. A human 
 stops execution; after recording the human decision on the Issue, resume through one
 declared edge with `--transition NAME`.
 
+A workflow can run deterministic validation without an LLM by using a `program`
+state. The command is an argv sequence and runs directly in the named repository's
+Issue worktree:
+
+```yaml
+testing:
+  type: program
+  command: [make, test]
+  repository: backend
+  timeout_seconds: 900
+  transitions:
+    succeeded:
+      to: review
+    failed:
+      to: implementation
+    error:
+      to: await_human
+```
+
+Exit status zero selects `succeeded`, another normal exit selects `failed`, and an
+execution failure or timeout selects `error`. Full output remains in the external
+Invocation logs; bounded result data is recorded on the Issue.
+
 The following commands are planned:
 
 ```sh

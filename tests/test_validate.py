@@ -144,6 +144,75 @@ class ValidateTests(unittest.TestCase):
 
         self.assertIn("state 'abandoned' is unreachable from initial", result.stdout)
 
+    def test_workflow_accepts_deterministic_program_state(self) -> None:
+        self.complete_user_setup()
+        config = self.root / ".agents/daik-config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                "repositories:\n",
+                "repositories:\n  backend:\n    path: backend\n    base: main\n",
+            ),
+            encoding="utf-8",
+        )
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            .replace("initial: implementation", "initial: automated_test")
+            + """
+  automated_test:
+    type: program
+    command:
+      - make
+      - test
+    repository: backend
+    timeout_seconds: 900
+    transitions:
+      succeeded:
+        to: implementation
+      failed:
+        to: failed
+      error:
+        to: await_human
+""",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate")
+
+        self.assertIn("Validation passed: 0 error(s)", result.stdout)
+
+    def test_program_transition_rejects_natural_language_selector(self) -> None:
+        self.complete_user_setup()
+        workflow = self.root / ".agents/daik-workflow.yaml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            + """
+  automated_test:
+    type: program
+    command:
+      - make
+      - test
+    repository: backend
+    timeout_seconds: 900
+    transitions:
+      succeeded:
+        to: completed
+        when: tests passed
+      failed:
+        to: failed
+      error:
+        to: await_human
+""",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            "states.automated_test.transitions.succeeded may contain only to",
+            result.stdout,
+        )
+
     def test_modified_daik_owned_file_is_an_error(self) -> None:
         self.complete_user_setup()
         spec = self.root / ".agents/daik-workflow-spec.md"

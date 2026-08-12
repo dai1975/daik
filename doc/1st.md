@@ -22,7 +22,7 @@
   [ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
 - [x] program orchestratorによるIssue stateとcontrol eventの管理
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
-- [ ] LLMを使用しないworkflow `program` state
+- [x] LLMを使用しないworkflow `program` state
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
 - [ ] polling、並行実行、再試行
 - [ ] structured logging と status 表示

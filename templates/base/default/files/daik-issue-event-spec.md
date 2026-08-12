@@ -39,6 +39,8 @@ Tracker packs define the provider-specific container used for the event.
 - `agent.started`: an agent-state invocation began
 - `agent.completed`: an invocation selected a declared transition
 - `agent.failed`: the command or its result protocol failed
+- `program.started`: a deterministic command invocation began
+- `program.completed`: the command selected `succeeded`, `failed`, or `error`
 - `validation`, `review`, `blocked`, `artifact.linked`, and `completed`: reserved
   for orchestrator and agent-run events
 
@@ -51,6 +53,13 @@ the selected `transition`, target state in `to`, natural-language `reason`, and 
 `agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
 Runner events are output records for the tracker joint to append; emitting an event
 does not itself persist it.
+
+## Program-run data
+
+`program.started` records the invocation, state, repository, and argv. A
+`program.completed` event records `result`, the same-named `transition`, `to`, exit
+code when available, duration in milliseconds, and a bounded summary. Complete stdout
+and stderr are retained only in the external Invocation log directory.
 
 ## Workflow control data
 

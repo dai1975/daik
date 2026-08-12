@@ -1,6 +1,6 @@
 # ADR 0001: Agent context、orchestration、program stateの責務分離
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-11
 
 ## Context
