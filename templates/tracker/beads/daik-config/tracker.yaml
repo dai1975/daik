@@ -2,6 +2,10 @@
 tracker:
   # Pack that defines the tracker operation mapping.
   pack: daik.tracker.beads
+  # Executable tracker joint implementing daik.tracker-joint.v1 over stdio.
+  # joint:
+  #   - daik-joint-beads
+  joint_timeout_seconds: 30
   # Every required label must be present on a ready bead before dispatch.
   required_labels:
     - "daik:ready"

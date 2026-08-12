@@ -109,6 +109,7 @@ daik work workspace reconcile
 daik work workspace remove
 daik work handoff create
 daik work agent run
+daik work run
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
@@ -118,6 +119,7 @@ daik work agent run
 - `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
+- `work run`: 単一Issueをclaimし、停止またはfinal stateまで進行する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -212,6 +214,26 @@ Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
 `$HOME/.local/state/daik`の優先順で保存します。検出できた場合はCodex native session
 transcriptへのlinkも作成します。
 
+orchestratorを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
+control operationを選択trackerへmappingし、`.agents/daik-tracker-joint-spec.md`の
+stdio契約を実装します。
+
+```yaml
+tracker:
+  joint:
+    - daik-joint-github-issues
+```
+
+単一Issueをclaimして処理します。
+
+```sh
+./daik/daik work run github:backend#123
+```
+
+tracker上のcurrent stateとcontrol eventが正本です。human stateでは停止します。
+人間の判断をIssueへ記録した後、`--transition NAME`で宣言済みの遷移を選んで
+再開します。
+
 以下のコマンドは今後実装する予定です。
 
 ```sh
@@ -250,7 +272,8 @@ my-site/
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   └── daik-agent-context-spec.md
+│   ├── daik-agent-context-spec.md
+│   └── daik-tracker-joint-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -334,6 +357,7 @@ eventを読んでから作業を継続します。
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | 通常は参照のみ |
 | `.agents/daik-agent-context-spec.md` | Invocation・CLI wrapper contract | daik | 通常は参照のみ |
+| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | 通常は参照のみ |
 | `.daik/manifest.json` | Operation record | daik | 開発時には使用しない |
 
 生成文書自身にも同じ区別を示します。Markdownはfront matterの`daik` mapping、
@@ -366,7 +390,7 @@ Orchestrator
               └── coding agent
 ```
 
-Symphonyが定義するscheduler、tracker adapter、workspace manager、agent runnerの
+Symphonyが定義するscheduler、tracker joint、workspace manager、agent runnerの
 責務分離を参考にしつつ、daikでは個人のsiteに展開して直接編集できる設定と
 workflowを重視します。
 

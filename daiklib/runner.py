@@ -179,7 +179,12 @@ class AgentRunner:
         started = event(
             "agent.started",
             issue,
-            {"state": state_name, "agent": profile_name, "role": profile["role"]},
+            {
+                "invocation_id": invocation_id,
+                "state": state_name,
+                "agent": profile_name,
+                "role": profile["role"],
+            },
         )
         record(started)
 
@@ -188,6 +193,7 @@ class AgentRunner:
                 "agent.failed",
                 issue,
                 {
+                    "invocation_id": invocation_id,
                     "state": state_name,
                     "agent": profile_name,
                     "role": profile["role"],
@@ -309,6 +315,7 @@ class AgentRunner:
             "agent.completed",
             issue,
             {
+                "invocation_id": invocation_id,
                 "state": state_name,
                 "agent": profile_name,
                 "role": profile["role"],

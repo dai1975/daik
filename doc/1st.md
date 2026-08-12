@@ -20,7 +20,7 @@
 - [x] 共通agent contextとagent CLI wrapperの設計・生成
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md),
   [ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
-- [ ] program orchestratorによるIssue stateとcontrol eventの管理
+- [x] program orchestratorによるIssue stateとcontrol eventの管理
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
 - [ ] LLMを使用しないworkflow `program` state
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))

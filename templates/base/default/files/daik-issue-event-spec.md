@@ -32,6 +32,10 @@ Tracker packs define the provider-specific container used for the event.
 - `workspace.reconciled`: local state matched a previously recorded event
 - `workspace.removed`: worktrees were removed; branches were retained
 - `handoff`: one agent role handed work to another
+- `workflow.started`: the Issue was claimed and entered its initial state
+- `workflow.transitioned`: an allowed transition was atomically applied
+- `workflow.awaiting_human`: execution stopped for an explicit human decision
+- `workflow.finished`: a final state and outcome were committed
 - `agent.started`: an agent-state invocation began
 - `agent.completed`: an invocation selected a declared transition
 - `agent.failed`: the command or its result protocol failed
@@ -47,6 +51,16 @@ the selected `transition`, target state in `to`, natural-language `reason`, and 
 `agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
 Runner events are output records for the tracker joint to append; emitting an event
 does not itself persist it.
+
+## Workflow control data
+
+`workflow.started` records `state`. `workflow.transitioned` records `from`, the named
+`transition`, `to`, and monotonically increasing `transition_count`.
+`workflow.awaiting_human` records `state` and `prompt`. `workflow.finished` records
+`state` and `outcome`.
+
+The tracker joint commits these events with an opaque compare-and-set control version.
+Only committed control events determine the current workflow state.
 
 ## Workspace data
 

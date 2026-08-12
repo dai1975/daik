@@ -50,6 +50,7 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
         self.assertTrue((root / ".agents/daik-worker.md").is_file())
         self.assertTrue((root / ".agents/daik-agent-context-spec.md").is_file())
+        self.assertTrue((root / ".agents/daik-tracker-joint-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-issue-event-spec.md").is_file())
         self.assertTrue(

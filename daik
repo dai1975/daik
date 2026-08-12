@@ -16,10 +16,12 @@ import tempfile
 from typing import Any, Final
 
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
+from daiklib.joints import TrackerJoint
+from daiklib.orchestrator import Orchestrator, OrchestratorError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.9.0"
+VERSION: Final = "0.10.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -853,6 +855,9 @@ class SiteValidator:
         self.document_metadata(
             ".agents/daik-agent-context-spec.md", "agent-context-spec", "daik", "reference"
         )
+        self.document_metadata(
+            ".agents/daik-tracker-joint-spec.md", "tracker-joint-spec", "daik", "reference"
+        )
         config = self.load_yaml(".agents/daik-config.yaml")
         agents = self.load_text("AGENTS.md")
 
@@ -1040,6 +1045,19 @@ class SiteValidator:
         if not isinstance(tracker, dict) or not isinstance(tracker.get("pack"), str):
             self.report("ERROR", relative, "tracker.pack must be a string")
         else:
+            joint = tracker.get("joint")
+            if joint is not None and (
+                not isinstance(joint, list)
+                or not joint
+                or not all(isinstance(item, str) and item for item in joint)
+            ):
+                self.report(
+                    "ERROR", relative, "tracker.joint must be a non-empty list of command arguments"
+                )
+            if not positive_integer(tracker.get("joint_timeout_seconds", 30)):
+                self.report(
+                    "ERROR", relative, "tracker.joint_timeout_seconds must be a positive integer"
+                )
             if any(
                 not isinstance(tracker.get(key), list)
                 or not all(isinstance(item, str) for item in tracker[key])
@@ -1239,6 +1257,34 @@ def doctor_site(args: argparse.Namespace) -> int:
                 "run the daik-check-beads-compatibility skill when compatibility verification is required",
             )
         )
+    tracker_settings = config.get("tracker") if isinstance(config, dict) else None
+    tracker_joint = (
+        tracker_settings.get("joint") if isinstance(tracker_settings, dict) else None
+    )
+    if not isinstance(tracker_joint, list) or not tracker_joint:
+        diagnostics.append(
+            Diagnostic(
+                "WARNING",
+                "tracker",
+                "tracker.joint is not configured; work run is unavailable",
+            )
+        )
+    elif shutil.which(tracker_joint[0]) is None:
+        diagnostics.append(
+            Diagnostic(
+                "ERROR",
+                "tracker",
+                f"joint executable was not found on PATH: {tracker_joint[0]}",
+            )
+        )
+    else:
+        diagnostics.append(
+            Diagnostic(
+                "INFO",
+                "tracker",
+                f"tracker joint command is available: {tracker_joint[0]}",
+            )
+        )
     agent_settings = config.get("agent") if isinstance(config, dict) else None
     agent_command = agent_settings.get("command") if isinstance(agent_settings, dict) else None
     cli_wrapper = agent_settings.get("cli_wrapper") if isinstance(agent_settings, dict) else None
@@ -1394,6 +1440,43 @@ def work_agent_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def work_run(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    config = load_site_config(root)
+    workflow_path = root / ".agents/daik-workflow.yaml"
+    if not workflow_path.is_file():
+        raise DaikError(f"required workflow is missing: {workflow_path}")
+    workflow = parse_yaml_subset(workflow_path)
+    diagnostics = SiteValidator(root).validate()
+    errors = [item for item in diagnostics if item.severity == "ERROR"]
+    if errors:
+        raise DaikError(
+            "site validation failed before orchestration: "
+            + "; ".join(f"{item.path}: {item.message}" for item in errors)
+        )
+    tracker = config.get("tracker")
+    joint_command = tracker.get("joint") if isinstance(tracker, dict) else None
+    if not isinstance(joint_command, list) or not joint_command:
+        raise DaikError("tracker.joint must configure a tracker joint command")
+    joint_timeout = tracker.get("joint_timeout_seconds", 30)
+    joint = TrackerJoint(root, joint_command, joint_timeout)
+
+    def emit(item: dict[str, Any]) -> None:
+        print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+
+    try:
+        final_state = Orchestrator(root, config, workflow, joint).run(
+            args.issue, emit, args.transition
+        )
+    except OrchestratorError as error:
+        print(f"Orchestration failed: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"issue": args.issue, "state": final_state}, sort_keys=True))
+    return 0
+
+
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template-dir",
@@ -1410,7 +1493,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage=(
             "%(prog)s [-h] [--version] <subcommand> ...\n"
             "       %(prog)s site <init | packs | validate | doctor> ...\n"
-            "       %(prog)s work <workspace | handoff | agent> ..."
+            "       %(prog)s work <run | workspace | handoff | agent> ..."
         ),
         description="Issue-driven coding-agent workspace tools.",
     )
@@ -1458,6 +1541,17 @@ def build_parser() -> argparse.ArgumentParser:
     work_subparsers = work_parser.add_subparsers(
         dest="work_command", required=True, metavar="<work-command>"
     )
+    run_parser = work_subparsers.add_parser(
+        "run", help="orchestrate one Issue until it stops or reaches a final state"
+    )
+    run_parser.add_argument("issue", metavar="ISSUE")
+    run_parser.add_argument("--root", default=".", help="site root")
+    run_parser.add_argument(
+        "--transition",
+        metavar="NAME",
+        help="select a declared transition when resuming a human state",
+    )
+    run_parser.set_defaults(handler=work_run)
     workspace_parser = work_subparsers.add_parser(
         "workspace", help="manage per-issue Git worktrees"
     )

@@ -119,6 +119,7 @@ daik work workspace reconcile
 daik work workspace remove
 daik work handoff create
 daik work agent run
+daik work run
 ```
 
 - `site packs`: list available packs
@@ -128,6 +129,7 @@ daik work agent run
 - `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
 - `work handoff create`: emit a structured event for the next agent role
 - `work agent run`: invoke one agent state and emit transition and handoff events
+- `work run`: claim and orchestrate one Issue until it stops or reaches a final state
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -225,6 +227,26 @@ Invocation records are stored outside the site under `DAIK_STATE_HOME`,
 `$XDG_STATE_HOME/daik`, or `$HOME/.local/state/daik`, in that order. When discoverable,
 the record links to Codex's native session transcript.
 
+Configure an executable tracker joint before running the orchestrator. The joint maps
+daik control operations to the selected tracker and implements the stdio contract in
+`.agents/daik-tracker-joint-spec.md`:
+
+```yaml
+tracker:
+  joint:
+    - daik-joint-github-issues
+```
+
+Then claim and process one Issue:
+
+```sh
+./daik/daik work run github:backend#123
+```
+
+The tracker retains the authoritative current state and control events. A human state
+stops execution; after recording the human decision on the Issue, resume through one
+declared edge with `--transition NAME`.
+
 The following commands are planned:
 
 ```sh
@@ -266,7 +288,8 @@ my-site/
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   └── daik-agent-context-spec.md
+│   ├── daik-agent-context-spec.md
+│   └── daik-tracker-joint-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -351,6 +374,7 @@ do not destroy user changes.
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | Normally read-only |
 | `.agents/daik-agent-context-spec.md` | Invocation and CLI wrapper contract | daik | Normally read-only |
+| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | Normally read-only |
 | `.daik/manifest.json` | Operation record | daik | Not used during development |
 
 Generated documents also identify these roles themselves. Markdown files record
@@ -383,7 +407,7 @@ Orchestrator
               └── coding agent
 ```
 
-It follows Symphony's separation of scheduler, tracker adapter, workspace
+It follows Symphony's separation of scheduler, tracker joint, workspace
 manager, and agent runner responsibilities, while emphasizing configuration
 and workflows that are deployed into and directly editable within a personal
 site.
