@@ -22,7 +22,9 @@ For work assigned through an issue tracker, follow the process defined in
 `.agents/daik-workflow-spec.md`, and daik runtime settings are stored in
 `.agents/daik-config.yaml`. Runtime issue events are defined in
 `.agents/daik-issue-event-spec.md`. Follow `.agents/daik-tracker.md` for concrete issue
-tracker operations. Writable checkouts for individual issues are created under
+tracker operations, and follow `.agents/daik-worker.md` for worker permissions and
+responsibilities. The CLI wrapper protocol is defined in
+`.agents/daik-agent-context-spec.md`. Writable checkouts for individual issues are created under
 `workspaces/`.
 
 `.daik/` is an internal management area for daik and human operators. Do not

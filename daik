@@ -19,7 +19,7 @@ from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.8.0"
+VERSION: Final = "0.9.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -399,6 +399,7 @@ def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str,
     workflow_parts = read_contributions(selected, "workflow", language)
     tracker_parts = read_contributions(selected, "tracker", language)
     internal_parts = read_contributions(selected, "internal", language)
+    worker_parts = read_contributions(selected, "worker", language)
     if not agents_parts:
         raise DaikError("selected packs do not provide AGENTS.md instructions")
     if not workflow_parts:
@@ -407,6 +408,8 @@ def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str,
         raise DaikError("selected packs do not provide tracker instructions")
     if not internal_parts:
         raise DaikError("selected packs do not provide internal-area instructions")
+    if not worker_parts:
+        raise DaikError("selected packs do not provide worker instructions")
 
     templates[".daik/daik-AGENTS.md.template"] = (
         "daik",
@@ -415,6 +418,10 @@ def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str,
     templates[".daik/AGENTS.md"] = (
         "daik",
         "\n\n".join(internal_parts).rstrip() + "\n",
+    )
+    templates[".agents/daik-worker.md"] = (
+        "user",
+        "\n\n".join(worker_parts).rstrip() + "\n",
     )
     workflow = selected[1]
     tracker = selected[2]
@@ -835,17 +842,27 @@ class SiteValidator:
             ".agents/daik-tracker.md", "tracker", "user", "review-and-customize"
         )
         self.document_metadata(
+            ".agents/daik-worker.md", "worker-policy", "user", "review-and-customize"
+        )
+        self.document_metadata(
             ".agents/daik-workflow-spec.md", "workflow-spec", "daik", "reference"
         )
         self.document_metadata(
             ".agents/daik-issue-event-spec.md", "issue-event-spec", "daik", "reference"
+        )
+        self.document_metadata(
+            ".agents/daik-agent-context-spec.md", "agent-context-spec", "daik", "reference"
         )
         config = self.load_yaml(".agents/daik-config.yaml")
         agents = self.load_text("AGENTS.md")
 
         if agents is not None:
             self.check_placeholders("AGENTS.md", agents)
-            for reference in (".agents/daik-workflow.yaml", ".agents/daik-tracker.md"):
+            for reference in (
+                ".agents/daik-workflow.yaml",
+                ".agents/daik-tracker.md",
+                ".agents/daik-worker.md",
+            ):
                 if reference not in agents:
                     self.report("ERROR", "AGENTS.md", f"does not reference {reference}")
         for relative in (".agents/daik-workflow.yaml", ".agents/daik-tracker.md"):
@@ -994,6 +1011,15 @@ class SiteValidator:
                 if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                     self.report("ERROR", relative, f"agent.{key} must be a positive integer")
             command = agent.get("command")
+            cli_wrapper = agent.get("cli_wrapper")
+            if command is not None and cli_wrapper is not None:
+                self.report(
+                    "ERROR",
+                    relative,
+                    "agent.cli_wrapper and agent.command are mutually exclusive",
+                )
+            if cli_wrapper is not None and cli_wrapper != "codex":
+                self.report("ERROR", relative, "agent.cli_wrapper must currently be 'codex'")
             if command is not None and (
                 not isinstance(command, list)
                 or not command
@@ -1004,6 +1030,8 @@ class SiteValidator:
                     relative,
                     "agent.command must be a non-empty list of command arguments",
                 )
+            if not isinstance(agent.get("wrapper_options", {}), dict):
+                self.report("ERROR", relative, "agent.wrapper_options must be a mapping")
         polling = config.get("polling")
         interval = polling.get("interval_ms") if isinstance(polling, dict) else None
         if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
@@ -1027,7 +1055,7 @@ class SiteValidator:
                 self.report(
                     "ERROR",
                     relative,
-                    "tracker access must be user-configured in daik-tracker.md, not as a CLI adapter",
+                    "tracker access must be user-configured in daik-tracker.md, not as a tracker command",
                 )
 
     def validate_manifest(
@@ -1213,12 +1241,19 @@ def doctor_site(args: argparse.Namespace) -> int:
         )
     agent_settings = config.get("agent") if isinstance(config, dict) else None
     agent_command = agent_settings.get("command") if isinstance(agent_settings, dict) else None
-    if not isinstance(agent_command, list) or not agent_command:
+    cli_wrapper = agent_settings.get("cli_wrapper") if isinstance(agent_settings, dict) else None
+    if cli_wrapper == "codex":
+        codex = shutil.which("codex")
+        if codex is None:
+            diagnostics.append(Diagnostic("ERROR", "agent", "codex executable was not found on PATH"))
+        else:
+            diagnostics.append(Diagnostic("INFO", "agent", f"Codex CLI wrapper is configured: {codex}"))
+    elif not isinstance(agent_command, list) or not agent_command:
         diagnostics.append(
             Diagnostic(
                 "WARNING",
                 "agent",
-                "agent.command is not configured; work agent run is unavailable",
+                "agent.cli_wrapper or agent.command is not configured; work agent run is unavailable",
             )
         )
     elif shutil.which(agent_command[0]) is None:

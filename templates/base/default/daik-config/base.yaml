@@ -35,13 +35,17 @@ agent:
   max_retry_backoff_ms: 300000
   # Maximum wall time for one workflow state invocation.
   timeout_seconds: 3600
-  # External coding-agent adapter. Each item is one argv value; no shell is used.
-  # The command reads its prompt from stdin and writes one result JSON object to
-  # stdout. Configure this before using `daik work agent run`. Example:
+  # Enable the built-in Codex CLI wrapper before using `daik work agent run`:
+  # cli_wrapper: codex
+  # Product-specific options are passed only to that wrapper:
+  # wrapper_options:
+  #   sandbox: workspace-write
+  #
+  # A third-party CLI wrapper can instead be configured as argv. It reads a
+  # daik.agent-invocation.v1 JSON object from stdin and writes one
+  # daik.cli-wrapper-result.v1 JSON object to stdout:
   # command:
-  #   - codex
-  #   - exec
-  #   - -
+  #   - daik-cli-wrapper-example
 
 # How frequently the orchestrator checks for eligible issues, in milliseconds.
 polling:

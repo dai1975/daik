@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Translate daik.agent-invocation.v1 to `codex exec`."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+from typing import Any
+import ctypes
+
+
+PROTOCOL = "daik.agent-invocation.v1"
+RESULT_PROTOCOL = "daik.cli-wrapper-result.v1"
+CURRENT_PROCESS: subprocess.Popen[str] | None = None
+
+
+class WrapperError(RuntimeError):
+    pass
+
+
+def require_mapping(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise WrapperError(f"{name} must be an object")
+    return value
+
+
+def require_string(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise WrapperError(f"{name} must be a non-empty string")
+    return value
+
+
+def result_schema() -> dict[str, Any]:
+    string_list = {"type": "array", "items": {"type": "string"}}
+    properties: dict[str, Any] = {
+        "transition": {"type": "string"},
+        "reason": {"type": "string"},
+        "evidence": string_list,
+        "summary": {"type": "string"},
+        "commits": string_list,
+        "validation": string_list,
+        "decisions": string_list,
+        "risks": string_list,
+        "next_actions": string_list,
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def build_prompt(invocation: dict[str, Any]) -> str:
+    profile = require_mapping(invocation.get("profile"), "profile")
+    transitions = require_mapping(invocation.get("transitions"), "transitions")
+    context = require_mapping(invocation.get("context"), "context")
+    references = "\n".join(f"- {name}: {path}" for name, path in context.items())
+    return "\n".join(
+        (
+            "You are one worker invocation in a daik coding workflow.",
+            f"Issue: {require_string(invocation.get('issue'), 'issue')}",
+            f"Current state: {require_string(invocation.get('state'), 'state')}",
+            f"Role: {require_string(profile.get('role'), 'profile.role')}",
+            "",
+            "Read the issue and its latest handoff events using the configured tracker joint.",
+            "Record investigation, implementation, questions, validation, and handoff details",
+            "directly on the issue. Do not change claim, workflow state, visit count, or retry data.",
+            "Work from the site root and modify only the assigned checkouts under workspaces/.",
+            "",
+            "Context references:",
+            references,
+            "",
+            "Role instructions:",
+            require_string(profile.get("instructions"), "profile.instructions").strip(),
+            "",
+            "State task:",
+            require_string(invocation.get("task"), "task").strip(),
+            "",
+            "Declared transitions:",
+            json.dumps(transitions, ensure_ascii=False, indent=2),
+            "",
+            "Complete only this state's work. Do not perform the next state's work.",
+            "Select exactly one declared transition. Do not invent or skip a state.",
+            "Return only the structured result required by the supplied JSON Schema.",
+        )
+    )
+
+
+def find_session(thread_id: str, environment: dict[str, str]) -> Path | None:
+    codex_home = Path(environment.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
+    sessions = codex_home / "sessions"
+    if not sessions.is_dir():
+        return None
+    try:
+        matches = [path for path in sessions.rglob(f"*{thread_id}*") if path.is_file()]
+        return max(matches, key=lambda path: path.stat().st_mtime) if matches else None
+    except OSError:
+        return None
+
+
+def set_parent_death_signal() -> None:
+    """Terminate Codex if a timed-out daik process kills this wrapper."""
+    libc = ctypes.CDLL(None)
+    libc.prctl(1, signal.SIGTERM)
+
+
+def forward_signal(signum: int, _frame: Any) -> None:
+    if CURRENT_PROCESS is not None and CURRENT_PROCESS.poll() is None:
+        CURRENT_PROCESS.send_signal(signum)
+
+
+def run(invocation: dict[str, Any]) -> dict[str, Any]:
+    if invocation.get("protocol_version") != PROTOCOL:
+        raise WrapperError(f"protocol_version must be {PROTOCOL!r}")
+    site = Path(require_string(invocation.get("site_root"), "site_root"))
+    log_directory = Path(require_string(invocation.get("log_directory"), "log_directory"))
+    if not site.is_absolute() or not site.is_dir():
+        raise WrapperError("site_root must be an existing absolute directory")
+    if not log_directory.is_absolute() or not log_directory.is_dir():
+        raise WrapperError("log_directory must be an existing absolute directory")
+    options = require_mapping(invocation.get("wrapper_options", {}), "wrapper_options")
+    executable = require_string(options.get("executable", "codex"), "wrapper_options.executable")
+    sandbox = options.get("sandbox", "workspace-write")
+    if sandbox not in {"read-only", "workspace-write", "danger-full-access"}:
+        raise WrapperError("wrapper_options.sandbox is invalid")
+
+    schema_path = log_directory / "result-schema.json"
+    result_path = log_directory / "codex-final-result.json"
+    events_path = log_directory / "codex-events.jsonl"
+    stderr_path = log_directory / "codex-stderr.log"
+    schema_path.write_text(json.dumps(result_schema(), indent=2) + "\n", encoding="utf-8")
+    command = [
+        executable,
+        "exec",
+        "--json",
+        "--color",
+        "never",
+        "--sandbox",
+        sandbox,
+        "--cd",
+        str(site),
+        "--output-schema",
+        str(schema_path),
+        "--output-last-message",
+        str(result_path),
+    ]
+    if options.get("skip_git_repo_check", True) is True:
+        command.append("--skip-git-repo-check")
+    for option, flag in (("model", "--model"), ("profile", "--profile")):
+        value = options.get(option)
+        if value is not None:
+            command.extend((flag, require_string(value, f"wrapper_options.{option}")))
+    extra_arguments = options.get("arguments", [])
+    if not isinstance(extra_arguments, list) or not all(isinstance(item, str) for item in extra_arguments):
+        raise WrapperError("wrapper_options.arguments must be a list of strings")
+    command.extend(extra_arguments)
+    command.append("-")
+
+    global CURRENT_PROCESS
+    thread_id: str | None = None
+    with events_path.open("w", encoding="utf-8") as events, stderr_path.open(
+        "w", encoding="utf-8"
+    ) as diagnostics:
+        CURRENT_PROCESS = subprocess.Popen(
+            command,
+            cwd=site,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=diagnostics,
+            text=True,
+            env=os.environ,
+            preexec_fn=set_parent_death_signal,
+        )
+        assert CURRENT_PROCESS.stdin is not None
+        assert CURRENT_PROCESS.stdout is not None
+        CURRENT_PROCESS.stdin.write(build_prompt(invocation))
+        CURRENT_PROCESS.stdin.close()
+        for line in CURRENT_PROCESS.stdout:
+            events.write(line)
+            events.flush()
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if item.get("type") == "thread.started" and isinstance(item.get("thread_id"), str):
+                thread_id = item["thread_id"]
+        return_code = CURRENT_PROCESS.wait()
+        CURRENT_PROCESS = None
+    if return_code:
+        detail = stderr_path.read_text(encoding="utf-8", errors="replace")[-4000:].strip()
+        raise WrapperError(f"codex exec exited with {return_code}: {detail or 'no diagnostic output'}")
+    try:
+        agent_result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WrapperError("Codex did not write a valid final result JSON object") from error
+    if not isinstance(agent_result, dict):
+        raise WrapperError("Codex final result must be a JSON object")
+    native_artifacts: list[dict[str, str]] = []
+    if thread_id:
+        session = find_session(thread_id, dict(os.environ))
+        if session is not None:
+            native_artifacts.append({"type": "session", "id": thread_id, "path": str(session.resolve())})
+    return {
+        "protocol_version": RESULT_PROTOCOL,
+        "wrapper": {"name": "codex", "thread_id": thread_id},
+        "agent_result": agent_result,
+        "native_artifacts": native_artifacts,
+    }
+
+
+def main() -> int:
+    try:
+        invocation = json.load(sys.stdin)
+        if not isinstance(invocation, dict):
+            raise WrapperError("invocation root must be a JSON object")
+        print(json.dumps(run(invocation), ensure_ascii=False))
+        return 0
+    except (WrapperError, OSError, json.JSONDecodeError) as error:
+        print(f"daik Codex CLI wrapper: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, forward_signal)
+    signal.signal(signal.SIGINT, forward_signal)
+    raise SystemExit(main())

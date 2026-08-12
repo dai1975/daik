@@ -48,6 +48,8 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".agents/daik-workflow.yaml").is_file())
         self.assertTrue((root / ".agents/daik-config.yaml").is_file())
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
+        self.assertTrue((root / ".agents/daik-worker.md").is_file())
+        self.assertTrue((root / ".agents/daik-agent-context-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-issue-event-spec.md").is_file())
         self.assertTrue(
@@ -90,6 +92,7 @@ class InitTests(unittest.TestCase):
         self.assertIn("<!-- DAIK:COPY:END -->", agents)
         self.assertIn("<<DAIK:WORKSPACE_GUIDE>>", agents)
         self.assertIn(".agents/daik-issue-event-spec.md", agents)
+        self.assertIn(".agents/daik-worker.md", agents)
         config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)
@@ -241,7 +244,8 @@ class InitTests(unittest.TestCase):
             (root / ".agents/skills/daik-check-beads-compatibility/SKILL.md").is_file()
         )
         (root / "AGENTS.md").write_text(
-            "Read .agents/daik-workflow.yaml and .agents/daik-tracker.md.\n",
+            "Read .agents/daik-workflow.yaml, .agents/daik-tracker.md, and "
+            ".agents/daik-worker.md.\n",
             encoding="utf-8",
         )
         tracker_path = root / ".agents/daik-tracker.md"

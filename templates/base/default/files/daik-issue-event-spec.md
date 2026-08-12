@@ -45,7 +45,7 @@ the selected `transition`, target state in `to`, natural-language `reason`, and 
 `evidence` list. The runner emits a `handoff` event after a successful invocation.
 
 `agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
-Runner events are output records for the tracker adapter to append; emitting an event
+Runner events are output records for the tracker joint to append; emitting an event
 does not itself persist it.
 
 ## Workspace data

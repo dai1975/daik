@@ -200,15 +200,14 @@ At a role boundary, generate a handoff event for the next agent:
 `workspace remove` previews by default and requires `--wet-run` to remove
 worktrees. It never deletes issue branches.
 
-Configure an external coding-agent adapter as an argv list. daik uses no shell; the
-adapter reads its prompt from stdin and returns one JSON result on stdout:
+Enable the built-in Codex CLI wrapper. It translates the common daik Invocation to
+non-interactive `codex exec` without putting Codex-specific behavior in the runner:
 
 ```yaml
 agent:
-  command:
-    - codex
-    - exec
-    - -
+  cli_wrapper: codex
+  wrapper_options:
+    sandbox: workspace-write
   timeout_seconds: 3600
 ```
 
@@ -219,9 +218,12 @@ Run exactly one workflow agent state:
 ```
 
 The command runs from the site root and prints newline-delimited `agent.started`,
-`agent.completed`, and `handoff` events. A tracker adapter must append these complete
+`agent.completed`, and `handoff` events. A tracker joint must append these complete
 events to the issue. Agent or protocol failure instead emits `agent.failed`. See
-`.agents/daik-workflow-spec.md` for the result JSON contract.
+`.agents/daik-agent-context-spec.md` for the Invocation and CLI wrapper contracts.
+Invocation records are stored outside the site under `DAIK_STATE_HOME`,
+`$XDG_STATE_HOME/daik`, or `$HOME/.local/state/daik`, in that order. When discoverable,
+the record links to Codex's native session transcript.
 
 The following commands are planned:
 
@@ -261,8 +263,10 @@ my-site/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
+│   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
-│   └── daik-issue-event-spec.md
+│   ├── daik-issue-event-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -304,6 +308,13 @@ daik packs do not install skills or MCP servers. The user selects the skill,
 MCP server, or CLI used to operate the tracker and replaces
 `<<DAIK:TRACKER_TOOL>>` with concrete usage instructions.
 
+#### `.agents/daik-worker.md`
+
+This user-owned file separates worker responsibilities from orchestrator control.
+Workers record substantive work on the issue but do not modify claim, workflow state,
+visit count, or retry data. The daik-owned agent-context specification defines the
+Invocation and CLI wrapper protocols.
+
 #### `workspaces/`
 
 This directory contains an isolated work area for each issue.
@@ -335,9 +346,11 @@ do not destroy user changes.
 | `.daik/daik-AGENTS.md.template` | Integration guide | daik | Use only the copy block |
 | `.agents/daik-workflow.yaml` | Workflow | User | Review and customize the process |
 | `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
+| `.agents/daik-worker.md` | Worker policy | User | Review worker permissions and responsibilities |
 | `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | Normally read-only |
+| `.agents/daik-agent-context-spec.md` | Invocation and CLI wrapper contract | daik | Normally read-only |
 | `.daik/manifest.json` | Operation record | daik | Not used during development |
 
 Generated documents also identify these roles themselves. Markdown files record
@@ -358,7 +371,7 @@ which monitors an issue tracker and runs coding agents in per-issue workspaces.
 Issue tracker
       │
       ▼
-Tracker adapter
+Tracker joint
       │ normalized Issue
       ▼
 Orchestrator

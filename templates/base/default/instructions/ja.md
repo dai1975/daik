@@ -22,7 +22,9 @@ Issue trackerから割り当てられた作業では、`.agents/daik-workflow.ya
 `.agents/daik-workflow-spec.md`、daikの実行設定は`.agents/daik-config.yaml`に
 定義されています。runtime issue eventは`.agents/daik-issue-event-spec.md`に
 定義されています。Issue trackerの具体的な操作は`.agents/daik-tracker.md`に
-従ってください。Issueごとの書き込み可能なcheckoutは
+従い、workerの権限と責務は`.agents/daik-worker.md`に従ってください。
+CLI wrapper protocolは`.agents/daik-agent-context-spec.md`に定義されています。
+Issueごとの書き込み可能なcheckoutは
 `workspaces/`以下に作成されます。
 
 `.daik/`はdaikと人間のoperatorが使用する内部管理領域です。通常のIssue調査、

@@ -33,10 +33,14 @@ contributions:
   internal:
     ja: internal/AGENTS.ja.md
     en: internal/AGENTS.en.md
+  worker:
+    ja: worker/ja.md
+    en: worker/en.md
 
 # Static daik-owned files. Each entry maps a source path relative to this pack
 # to a destination path relative to the site root.
 files_daik:
   files/daik-workflow-spec.md: .agents/daik-workflow-spec.md
   files/daik-issue-event-spec.md: .agents/daik-issue-event-spec.md
+  files/daik-agent-context-spec.md: .agents/daik-agent-context-spec.md
   files/ignore: .daik/.ignore

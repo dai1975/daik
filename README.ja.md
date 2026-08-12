@@ -187,15 +187,14 @@ roleの境界では次のagent向けhandoff eventを生成します。
 `workspace remove`はdefaultでpreviewだけを行い、worktreeの削除には`--wet-run`が
 必要です。Issue branchは削除しません。
 
-外部coding-agent adapterをargvのlistとして設定します。daikはshellを使わず、
-adapterはstdinからpromptを読み、stdoutへ単一のJSON resultを返します。
+組み込みCodex CLI wrapperを有効にします。共通daik Invocationを非対話の
+`codex exec`へ変換し、Codex固有の動作をrunnerから分離します。
 
 ```yaml
 agent:
-  command:
-    - codex
-    - exec
-    - -
+  cli_wrapper: codex
+  wrapper_options:
+    sandbox: workspace-write
   timeout_seconds: 3600
 ```
 
@@ -206,9 +205,12 @@ workflowのagent stateを一つだけ実行します。
 ```
 
 site rootでcommandを実行し、newline-delimitedの`agent.started`、
-`agent.completed`、`handoff` eventを出力します。tracker adapterはこれらのevent全体を
+`agent.completed`、`handoff` eventを出力します。tracker jointはこれらのevent全体を
 Issueへ追記します。agentまたはprotocolの失敗時は`agent.failed`を出力します。
-result JSONの契約は`.agents/daik-workflow-spec.md`を参照してください。
+InvocationとCLI wrapperの契約は`.agents/daik-agent-context-spec.md`を参照してください。
+Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
+`$HOME/.local/state/daik`の優先順で保存します。検出できた場合はCodex native session
+transcriptへのlinkも作成します。
 
 以下のコマンドは今後実装する予定です。
 
@@ -245,8 +247,10 @@ my-site/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
 │   ├── daik-config.yaml
+│   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
-│   └── daik-issue-event-spec.md
+│   ├── daik-issue-event-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
@@ -287,6 +291,13 @@ daikのpackはskillやMCPそのものを配置しません。trackerの操作に
 MCP、CLIはユーザーが選び、生成された`<<DAIK:TRACKER_TOOL>>`を具体的な利用方法で
 置き換えます。
 
+#### `.agents/daik-worker.md`
+
+workerの責務とorchestrator controlを分離するユーザー所有ファイルです。workerは
+実質的な作業情報をIssueへ記録しますが、claim、workflow state、visit count、retry
+dataは変更しません。daik所有のagent context仕様がInvocationとCLI wrapperの
+protocolを定義します。
+
 #### `workspaces/`
 
 Issueごとの隔離された作業場所です。
@@ -318,9 +329,11 @@ eventを読んでから作業を継続します。
 | `.daik/daik-AGENTS.md.template` | Integration guide | daik | copy blockだけを使用する |
 | `.agents/daik-workflow.yaml` | Workflow | User | 作業手順を確認・編集する |
 | `.agents/daik-tracker.md` | Tracker guide | User | 操作mappingとplaceholderを確認・編集する |
+| `.agents/daik-worker.md` | Worker policy | User | workerの権限と責務を確認・編集する |
 | `.agents/daik-config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | 通常は参照のみ |
+| `.agents/daik-agent-context-spec.md` | Invocation・CLI wrapper contract | daik | 通常は参照のみ |
 | `.daik/manifest.json` | Operation record | daik | 開発時には使用しない |
 
 生成文書自身にも同じ区別を示します。Markdownはfront matterの`daik` mapping、
@@ -341,7 +354,7 @@ daikは[OpenAI Symphony](https://github.com/openai/symphony)の、Issue tracker�
 Issue tracker
       │
       ▼
-Tracker adapter
+Tracker joint
       │ normalized Issue
       ▼
 Orchestrator

@@ -17,14 +17,16 @@
 - [x] Issue ごとの workspace と Git worktree の管理
 - [x] Issue eventによるagent間handoff
 - [x] coding agent runner
-- [ ] 共通agent contextとagent software adapterの設計・生成
-  ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
+- [x] 共通agent contextとagent CLI wrapperの設計・生成
+  ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md),
+  [ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
 - [ ] program orchestratorによるIssue stateとcontrol eventの管理
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
 - [ ] LLMを使用しないworkflow `program` state
   ([ADR 0001](adr/0001-agent-context-orchestration-and-program-states.md))
 - [ ] polling、並行実行、再試行
 - [ ] structured logging と status 表示
+  ([ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
 
 ## Completion criteria
 

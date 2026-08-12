@@ -54,7 +54,7 @@ orchestratorが行う。
 workerがtimeoutまたはcrashした場合も記録を残せるよう、`agent.started`、
 `agent.failed`など外側から観測できるeventはorchestratorが追記する。
 
-### 3. 共通agent contextと製品別adapterを分離する
+### 3. 共通agent contextと製品別CLI wrapperを分離する
 
 daikは、製品に依存しない論理的なagent contextを定義する。
 
@@ -65,7 +65,7 @@ daikは、製品に依存しない論理的なagent contextを定義する。
 - Issueと最新handoff
 - result protocol
 
-製品別adapterは、このcontextを各agent softwareのprompt、native role、subagent、
+製品別CLI wrapperは、このcontextを各agent softwareのprompt、native role、subagent、
 MCP、Skill、sandbox、structured outputへmappingする。共通contextを特定製品の
 機能へ直接依存させない。
 
@@ -132,14 +132,14 @@ linkできる形にする。
 - workerが持つ詳細な作業contextをIssueへ直接残せる。
 - trackerへの同時更新と異常終了はorchestratorが一貫して処理できる。
 - 単純なtestやCI確認で追加LLM costが発生しない。
-- agent context adapterとtracker adapterという二種類の境界設計が必要になる。
+- agent CLI wrapperとtracker jointという二種類の境界設計が必要になる。
 - worker用tracker権限とorchestrator用制御権限を分離する必要がある。
 - `program` commandの安全なpath解決、timeout、出力制限、機密情報対策が必要になる。
 
 ## Deferred decisions
 
 - 共通agent contextの具体的なfile layoutとschema
-- 各agent software adapterのinterface
+- 各agent CLI wrapperのinterface
 - workerがIssueへ書き込むための最小権限モデル
 - 一つの`program` stateで複数commandを扱う必要があるか
 - 非同期CIの`pending`、polling、cancelの扱い

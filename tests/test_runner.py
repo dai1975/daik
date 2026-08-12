@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -18,7 +19,8 @@ class RunnerTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.run_daik("site", "init", "--lang", "en", "--wet-run")
         (self.root / "AGENTS.md").write_text(
-            "Read .agents/daik-workflow.yaml and .agents/daik-tracker.md.\n",
+            "Read .agents/daik-workflow.yaml, .agents/daik-tracker.md, and "
+            ".agents/daik-worker.md.\n",
             encoding="utf-8",
         )
         tracker = self.root / ".agents/daik-tracker.md"
@@ -32,12 +34,15 @@ class RunnerTests(unittest.TestCase):
     def run_daik(
         self, *arguments: str, expected_returncode: int = 0
     ) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment["DAIK_STATE_HOME"] = str(self.root / "daik-state")
         result = subprocess.run(
             [sys.executable, str(DAIK), *arguments],
             cwd=self.root,
             text=True,
             capture_output=True,
             check=False,
+            env=environment,
         )
         self.assertEqual(
             result.returncode,
@@ -55,18 +60,25 @@ import os
 import pathlib
 import sys
 
-prompt = sys.stdin.read()
-pathlib.Path("received-prompt.txt").write_text(prompt, encoding="utf-8")
+invocation = json.load(sys.stdin)
+pathlib.Path("received-invocation.json").write_text(
+    json.dumps(invocation), encoding="utf-8"
+)
 print(json.dumps({
-    "transition": os.environ["TEST_TRANSITION"],
-    "reason": "state work is ready",
-    "evidence": ["adapter completed"],
-    "summary": "implementation completed",
-    "commits": ["abc123"],
-    "validation": ["tests=passed"],
-    "decisions": [],
-    "risks": [],
-    "next_actions": ["run independent tests"],
+    "protocol_version": "daik.cli-wrapper-result.v1",
+    "wrapper": {"name": "test"},
+    "native_artifacts": [],
+    "agent_result": {
+        "transition": os.environ["TEST_TRANSITION"],
+        "reason": "state work is ready",
+        "evidence": ["adapter completed"],
+        "summary": "implementation completed",
+        "commits": ["abc123"],
+        "validation": ["tests=passed"],
+        "decisions": [],
+        "risks": [],
+        "next_actions": ["run independent tests"],
+    },
 }))
 """,
             encoding="utf-8",
@@ -108,10 +120,17 @@ runpy.run_path("adapter.py", run_name="__main__")
         self.assertEqual(events[1]["data"]["transition"], "ready_for_testing")
         self.assertEqual(events[1]["data"]["to"], "testing")
         self.assertEqual(events[2]["data"]["to_role"], "testing")
-        prompt = (self.root / "received-prompt.txt").read_text(encoding="utf-8")
-        self.assertIn("Issue: github:backend#123", prompt)
-        self.assertIn('"ready_for_testing"', prompt)
-        self.assertIn("Return exactly one JSON object", prompt)
+        invocation = json.loads(
+            (self.root / "received-invocation.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(invocation["issue"], "github:backend#123")
+        self.assertIn("ready_for_testing", invocation["transitions"])
+        self.assertEqual(invocation["protocol_version"], "daik.agent-invocation.v1")
+        log_directory = Path(invocation["log_directory"])
+        self.assertTrue(log_directory.is_dir())
+        self.assertTrue((log_directory / "invocation.json").is_file())
+        self.assertTrue((log_directory / "result.json").is_file())
+        self.assertTrue((log_directory / "events.ndjson").is_file())
 
     def test_undeclared_transition_emits_failed_event(self) -> None:
         self.configure_adapter("skip_to_review")

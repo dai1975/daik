@@ -42,7 +42,8 @@ class ValidateTests(unittest.TestCase):
 
     def complete_user_setup(self) -> None:
         (self.root / "AGENTS.md").write_text(
-            "Read .agents/daik-workflow.yaml and .agents/daik-tracker.md.\n",
+            "Read .agents/daik-workflow.yaml, .agents/daik-tracker.md, and "
+            ".agents/daik-worker.md.\n",
             encoding="utf-8",
         )
         tracker = self.root / ".agents/daik-tracker.md"

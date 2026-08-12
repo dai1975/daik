@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any, Callable, Sequence
 
-from daiklib.workspaces import event, handoff_event
+from daiklib.invocations import (
+    InvocationError,
+    create_log_directory,
+    link_native_artifacts,
+    write_private_json,
+    write_private_text,
+)
+from daiklib.workspaces import event, handoff_event, safe_slug
 
 
 class RunnerError(RuntimeError):
@@ -28,6 +37,7 @@ class AgentRun:
     started: dict[str, Any]
     completed: dict[str, Any]
     handoff: dict[str, Any]
+    log_directory: Path
 
 
 def _strings(value: Any, field: str) -> list[str]:
@@ -42,15 +52,36 @@ class AgentRunner:
     def __init__(self, site: Path, config: dict[str, Any], workflow: dict[str, Any]):
         self.site = site.resolve()
         self.workflow = workflow
+        repositories = config.get("repositories", {})
+        self.repositories = repositories if isinstance(repositories, dict) else {}
         settings = config.get("agent")
         if not isinstance(settings, dict):
             raise RunnerError("agent configuration must be a mapping")
+        wrapper_name = settings.get("cli_wrapper")
         command = settings.get("command")
+        if wrapper_name is not None and command is not None:
+            raise RunnerError("configure only one of agent.cli_wrapper or agent.command")
+        if wrapper_name == "codex":
+            command = [
+                sys.executable,
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "cli-wrappers/codex/daik-cli-wrapper-codex"
+                ),
+            ]
+        elif wrapper_name is not None:
+            raise RunnerError(f"unknown built-in agent CLI wrapper: {wrapper_name}")
         if not isinstance(command, list) or not command or not all(
             isinstance(item, str) and item for item in command
         ):
-            raise RunnerError("agent.command must be a non-empty list of command arguments")
+            raise RunnerError(
+                "agent.cli_wrapper or agent.command must configure an agent CLI wrapper"
+            )
         self.command: Sequence[str] = command
+        options = settings.get("wrapper_options", {})
+        if not isinstance(options, dict):
+            raise RunnerError("agent.wrapper_options must be a mapping")
+        self.wrapper_options = options
         timeout = settings.get("timeout_seconds", 3600)
         if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
             raise RunnerError("agent.timeout_seconds must be a positive integer")
@@ -70,7 +101,15 @@ class AgentRunner:
             raise RunnerError(f"state {name} references an unknown agent profile")
         return state, profile
 
-    def _prompt(self, issue: str, state_name: str, state: dict[str, Any], profile: dict[str, Any]) -> str:
+    def _invocation(
+        self,
+        invocation_id: str,
+        log_directory: Path,
+        issue: str,
+        state_name: str,
+        state: dict[str, Any],
+        profile: dict[str, Any],
+    ) -> dict[str, Any]:
         transitions = state["transitions"]
         contract = {
             name: {
@@ -79,44 +118,37 @@ class AgentRunner:
             }
             for name, transition in transitions.items()
         }
-        result_schema = {
-            "transition": "one declared transition name",
-            "reason": "concise rationale",
-            "evidence": ["fact supporting the transition"],
-            "summary": "handoff summary",
-            "commits": ["commit id"],
-            "validation": ["command=result"],
-            "decisions": ["decision"],
-            "risks": ["remaining risk"],
-            "next_actions": ["next action"],
+        return {
+            "protocol_version": "daik.agent-invocation.v1",
+            "invocation_id": invocation_id,
+            "issue": issue,
+            "state": state_name,
+            "site_root": str(self.site),
+            "log_directory": str(log_directory),
+            "profile": {
+                "name": state["agent"],
+                "role": profile["role"],
+                "instructions": profile["instructions"],
+            },
+            "task": state["task"],
+            "context": {
+                "site_instructions": "AGENTS.md",
+                "worker_policy": ".agents/daik-worker.md",
+                "workflow": ".agents/daik-workflow.yaml",
+                "tracker": ".agents/daik-tracker.md",
+                "issue_events": ".agents/daik-issue-event-spec.md",
+            },
+            "workspace": {
+                "root": "workspaces",
+                "issue_directory": f"workspaces/{safe_slug(issue)}",
+                "repositories": {
+                    name: f"workspaces/{safe_slug(issue)}/{name}"
+                    for name in sorted(self.repositories)
+                },
+            },
+            "transitions": contract,
+            "wrapper_options": self.wrapper_options,
         }
-        return "\n".join(
-            (
-                "You are one invocation in a daik coding workflow.",
-                f"Issue: {issue}",
-                f"Current state: {state_name}",
-                f"Role: {profile['role']}",
-                "",
-                "Read AGENTS.md, .agents/daik-workflow.yaml, .agents/daik-tracker.md,",
-                ".agents/daik-issue-event-spec.md, the issue, and its latest handoff events.",
-                "Work from the site root. Modify only assigned checkouts under workspaces/.",
-                "",
-                "Role instructions:",
-                profile["instructions"].strip(),
-                "",
-                "State task:",
-                state["task"].strip(),
-                "",
-                "Declared transitions:",
-                json.dumps(contract, ensure_ascii=False, indent=2),
-                "",
-                "Complete only this state's work. Do not perform the next state's work.",
-                "Return exactly one JSON object on stdout and no other text.",
-                "Select one declared transition; do not invent or skip a state.",
-                "Result schema:",
-                json.dumps(result_schema, ensure_ascii=False, indent=2),
-            )
-        )
 
     def run(
         self,
@@ -126,13 +158,30 @@ class AgentRunner:
     ) -> AgentRun:
         state, profile = self._state(state_name)
         profile_name = state["agent"]
+        try:
+            invocation_id, log_directory = create_log_directory(self.site, issue)
+        except InvocationError as error:
+            raise RunnerError(str(error)) from error
+        invocation = self._invocation(
+            invocation_id, log_directory, issue, state_name, state, profile
+        )
+        write_private_json(log_directory / "invocation.json", invocation)
+        event_path = log_directory / "events.ndjson"
+        write_private_text(event_path, "")
+        started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        def record(item: dict[str, Any]) -> None:
+            with event_path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
+            if emit is not None:
+                emit(item)
+
         started = event(
             "agent.started",
             issue,
             {"state": state_name, "agent": profile_name, "role": profile["role"]},
         )
-        if emit is not None:
-            emit(started)
+        record(started)
 
         def fail(message: str) -> None:
             failed = event(
@@ -145,8 +194,7 @@ class AgentRunner:
                     "error": message[-1000:],
                 },
             )
-            if emit is not None:
-                emit(failed)
+            record(failed)
             raise AgentExecutionError(message, started, failed)
 
         environment = dict(os.environ)
@@ -155,13 +203,16 @@ class AgentRunner:
                 "DAIK_ISSUE": issue,
                 "DAIK_STATE": state_name,
                 "DAIK_AGENT_PROFILE": profile_name,
+                "DAIK_INVOCATION_ID": invocation_id,
+                "DAIK_LOG_DIRECTORY": str(log_directory),
             }
         )
+        process: subprocess.CompletedProcess[str] | None = None
         try:
             process = subprocess.run(
                 list(self.command),
                 cwd=self.site,
-                input=self._prompt(issue, state_name, state, profile),
+                input=json.dumps(invocation, ensure_ascii=False),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -170,18 +221,70 @@ class AgentRunner:
                 env=environment,
             )
         except subprocess.TimeoutExpired as error:
+            stdout = error.stdout if isinstance(error.stdout, str) else ""
+            stderr = error.stderr if isinstance(error.stderr, str) else ""
+            write_private_text(log_directory / "wrapper.stdout.log", stdout)
+            write_private_text(log_directory / "wrapper.stderr.log", stderr)
+            write_private_json(
+                log_directory / "metadata.json",
+                {
+                    "invocation_id": invocation_id,
+                    "started_at": started_at,
+                    "finished_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "status": "timed_out",
+                    "wrapper_executable": self.command[0],
+                },
+            )
             fail(f"agent command timed out after {self.timeout} seconds")
         except OSError as error:
+            write_private_json(
+                log_directory / "metadata.json",
+                {
+                    "invocation_id": invocation_id,
+                    "started_at": started_at,
+                    "finished_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "status": "start_failed",
+                    "wrapper_executable": self.command[0],
+                },
+            )
             fail(f"could not start agent command: {error}")
+        write_private_text(log_directory / "wrapper.stdout.log", process.stdout)
+        write_private_text(log_directory / "wrapper.stderr.log", process.stderr)
+        write_private_json(
+            log_directory / "metadata.json",
+            {
+                "invocation_id": invocation_id,
+                "started_at": started_at,
+                "finished_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "status": "completed" if process.returncode == 0 else "failed",
+                "exit_code": process.returncode,
+                "wrapper_executable": self.command[0],
+            },
+        )
         if process.returncode:
             detail = process.stderr.strip() or process.stdout.strip() or "no diagnostic output"
             fail(f"agent command exited with {process.returncode}: {detail[-1000:]}")
         try:
-            result = json.loads(process.stdout)
+            wrapper_result = json.loads(process.stdout)
         except json.JSONDecodeError:
             fail("agent stdout must contain exactly one JSON object")
+        if not isinstance(wrapper_result, dict):
+            fail("CLI wrapper stdout JSON root must be an object")
+        if wrapper_result.get("protocol_version") != "daik.cli-wrapper-result.v1":
+            fail("CLI wrapper returned an unsupported protocol_version")
+        result = wrapper_result.get("agent_result")
         if not isinstance(result, dict):
-            fail("agent stdout JSON root must be an object")
+            fail("CLI wrapper result must contain an agent_result object")
+        try:
+            linked_artifacts = link_native_artifacts(
+                log_directory, wrapper_result.get("native_artifacts")
+            )
+        except InvocationError as error:
+            fail(str(error))
+        write_private_json(
+            log_directory / "result.json",
+            {**wrapper_result, "native_artifacts": linked_artifacts},
+        )
         transition_name = result.get("transition")
         transition = state["transitions"].get(transition_name)
         if not isinstance(transition_name, str) or not isinstance(transition, dict):
@@ -233,7 +336,6 @@ class AgentRunner:
             risks,
             next_actions,
         )
-        if emit is not None:
-            emit(completed)
-            emit(handoff)
-        return AgentRun(started, completed, handoff)
+        record(completed)
+        record(handoff)
+        return AgentRun(started, completed, handoff, log_directory)
