@@ -18,11 +18,12 @@ from typing import Any, Final
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.joints import TrackerJoint
 from daiklib.broker import Broker, BrokerError
+from daiklib.broker_runs import BrokerRunError, BrokerRunLog, broker_run_status
 from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.13.0"
+VERSION: Final = "0.14.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -1533,16 +1534,34 @@ def work_run(args: argparse.Namespace) -> int:
         raise DaikError("tracker.joint must configure a tracker joint command")
     joint_timeout = tracker.get("joint_timeout_seconds", 30)
     joint = TrackerJoint(root, joint_command, joint_timeout)
+    try:
+        run_log = BrokerRunLog(root, "run", 1)
+        run_log.record("run.started", mode="run", issue=args.issue, concurrency=1)
+        run_log.record("work.submitted", issue=args.issue)
+    except BrokerRunError as error:
+        raise DaikError(str(error)) from error
 
     def emit(item: dict[str, Any]) -> None:
         print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+        run_log.record("work.event", issue=args.issue, event=item)
 
     try:
         final_state = Broker(root, config, workflow, joint).run(
             args.issue, emit, args.transition
         )
     except BrokerError as error:
+        run_log.record("work.failed", issue=args.issue, attempts=1, error=str(error))
+        run_log.finish("failed", error=str(error))
         print(f"Broker execution failed: {error}", file=sys.stderr)
+        return 1
+    except BrokerRunError as error:
+        print(f"Broker logging failed: {error}", file=sys.stderr)
+        return 1
+    try:
+        run_log.record("work.stopped", issue=args.issue, state=final_state, attempts=1)
+        run_log.finish("completed", result_state=final_state)
+    except BrokerRunError as error:
+        print(f"Broker logging failed: {error}", file=sys.stderr)
         return 1
     print(json.dumps({"issue": args.issue, "state": final_state}, sort_keys=True))
     return 0
@@ -1572,8 +1591,20 @@ def work_watch(args: argparse.Namespace) -> int:
     agent = config["agent"]
     polling = config["polling"]
 
+    try:
+        run_log = BrokerRunLog(root, "watch", agent["max_concurrent_agents"])
+        run_log.record(
+            "run.started",
+            mode="watch",
+            concurrency=agent["max_concurrent_agents"],
+            once=args.once,
+        )
+    except BrokerRunError as error:
+        raise DaikError(str(error)) from error
+
     def emit(item: dict[str, Any]) -> None:
-        print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+        record = run_log.append(item)
+        print(json.dumps(record, ensure_ascii=False, sort_keys=True), flush=True)
 
     watcher = WorkWatcher(
         lambda: Broker(root, config, workflow, joint),
@@ -1586,13 +1617,58 @@ def work_watch(args: argparse.Namespace) -> int:
         emit,
     )
     try:
-        return watcher.run(once=args.once)
+        result = watcher.run(once=args.once)
     except WatchError as error:
+        run_log.record("run.failed", error=str(error))
+        run_log.finish("failed", error=str(error))
         print(f"Broker watch failed: {error}", file=sys.stderr)
         return 1
+    except BrokerRunError as error:
+        print(f"Broker logging failed: {error}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
+        run_log.record("run.interrupted")
+        run_log.finish("interrupted")
         print("Broker watch stopped", file=sys.stderr)
         return 130
+    status = "completed" if result == 0 else "failed"
+    try:
+        run_log.record("run.finished", status=status)
+        run_log.finish(status)
+    except BrokerRunError as error:
+        print(f"Broker logging failed: {error}", file=sys.stderr)
+        return 1
+    return result
+
+
+def work_status(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    try:
+        status = broker_run_status(root, args.run)
+    except BrokerRunError as error:
+        raise DaikError(str(error)) from error
+    if args.json:
+        print(json.dumps(status, ensure_ascii=False, sort_keys=True))
+        return 0
+    print(f"Broker run: {status['broker_run_id']}")
+    print(f"Mode: {status['mode']}")
+    print(f"Status: {status['status']}")
+    print(f"Started: {status['started_at']}")
+    print(f"Finished: {status.get('finished_at') or '-'}")
+    print(f"Concurrency: {status['concurrency']}")
+    work = status["work"]
+    if work:
+        print()
+        print("ISSUE\tSTATUS\tATTEMPT\tSTATE/ERROR")
+        for item in work:
+            detail = item.get("state") or item.get("error") or "-"
+            print(
+                f"{item['issue']}\t{item['status']}\t{item.get('attempts', item.get('attempt', '-'))}"
+                f"\t{detail}"
+            )
+    return 0
 
 
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
@@ -1611,7 +1687,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage=(
             "%(prog)s [-h] [--version] <subcommand> ...\n"
             "       %(prog)s site <init | packs | validate | doctor> ...\n"
-            "       %(prog)s work <run | watch | workspace | handoff | agent> ..."
+            "       %(prog)s work <run | watch | status | workspace | handoff | agent> ..."
         ),
         description="Issue-driven coding-agent workspace tools.",
     )
@@ -1678,6 +1754,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--once", action="store_true", help="poll once and wait for submitted work"
     )
     watch_parser.set_defaults(handler=work_watch)
+    status_parser = work_subparsers.add_parser(
+        "status", help="show local status for the latest broker run"
+    )
+    status_parser.add_argument("--root", default=".", help="site root")
+    status_parser.add_argument("--run", metavar="RUN_ID", help="broker run ID")
+    status_parser.add_argument("--json", action="store_true", help="write one JSON object")
+    status_parser.set_defaults(handler=work_status)
     workspace_parser = work_subparsers.add_parser(
         "workspace", help="manage per-issue Git worktrees"
     )

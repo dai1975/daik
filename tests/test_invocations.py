@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from daiklib.invocations import (
     InvocationError,
-    create_log_directory,
+    create_invocation_directory,
     link_native_artifacts,
     state_root,
 )
@@ -44,11 +44,12 @@ class InvocationTests(unittest.TestCase):
     def test_creates_private_issue_and_invocation_directory(self) -> None:
         state = self.root / "state"
         with patch.dict(os.environ, {"DAIK_STATE_HOME": str(state)}):
-            invocation_id, directory = create_log_directory(
+            invocation_id, directory = create_invocation_directory(
                 self.site, "github:backend#123"
             )
 
         self.assertIn("github-backend-123", str(directory))
+        self.assertIn("invocations", directory.parts)
         self.assertIn(invocation_id, directory.name)
         self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
 
@@ -74,7 +75,7 @@ class InvocationTests(unittest.TestCase):
         linked.symlink_to(target, target_is_directory=True)
         with patch.dict(os.environ, {"DAIK_STATE_HOME": str(linked)}):
             with self.assertRaises(InvocationError):
-                create_log_directory(self.site, "issue-1")
+                create_invocation_directory(self.site, "issue-1")
 
     def test_rejects_symlink_inside_state_tree(self) -> None:
         state = self.root / "state"
@@ -84,7 +85,7 @@ class InvocationTests(unittest.TestCase):
         (state / "sites").symlink_to(outside, target_is_directory=True)
         with patch.dict(os.environ, {"DAIK_STATE_HOME": str(state)}):
             with self.assertRaises(InvocationError):
-                create_log_directory(self.site, "issue-1")
+                create_invocation_directory(self.site, "issue-1")
 
 
 if __name__ == "__main__":

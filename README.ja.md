@@ -112,6 +112,7 @@ daik work handoff create
 daik work agent run
 daik work run
 daik work watch
+daik work status
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
@@ -123,6 +124,7 @@ daik work watch
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
 - `work run`: claimした単一Issueをbrokerで停止またはfinal stateまで進行する
 - `work watch`: ready Issueをpollし、設定した並行数まで実行する
+- `work status`: trackerへ接続せず、最新のlocal broker runを表示する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -217,6 +219,16 @@ Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
 `$HOME/.local/state/daik`の優先順で保存します。検出できた場合はCodex native session
 transcriptへのlinkも作成します。
 
+local stateは責務ごとに分離します。
+
+```text
+sites/<site-id>/
+├── invocations/<issue-id>/<invocation-id>/
+└── broker-runs/<broker-run-id>/
+    ├── metadata.json
+    └── events.ndjson
+```
+
 brokerを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
 control operationを選択trackerへmappingし、`.agents/daik-tracker-joint-spec.md`の
 stdio契約を実装します。
@@ -274,13 +286,16 @@ watch processを再起動するまで再投入しません。
 `--once`を付けると1回だけpollし、投入したworkの停止または完了を待ちます。
 定期実行や診断に利用できます。
 
-以下のコマンドは今後実装する予定です。
+最新のbroker runを表示するか、IDで選択できます。
 
 ```sh
 daik work status
+daik work status --run BROKER_RUN_ID
+daik work status --json
 ```
 
-- `work status`: 実行中、再試行待ち、完了した作業を表示する
+statusはlocal broker-run recordだけを読みます。Issueのworkflow stateとhandoffの正本は
+trackerのままです。
 
 ## Site
 

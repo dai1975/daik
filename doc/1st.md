@@ -26,7 +26,7 @@
 - [x] LLMを使用しないworkflow `program` state
   ([ADR 0001](adr/0001-agent-context-broker-and-program-states.md))
 - [x] polling、並行実行、再試行 (`daik work watch`)
-- [ ] structured logging と status 表示
+- [x] structured logging と status 表示 (`daik work status`)
   ([ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
 
 ## Completion criteria

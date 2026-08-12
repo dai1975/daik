@@ -199,6 +199,18 @@ print(json.dumps({
         tracker = json.loads((self.root / "tracker-state.json").read_text())
         self.assertEqual(tracker["close_reason"], "completed")
 
+    def test_status_reads_latest_local_broker_run(self) -> None:
+        self.run_daik("work", "run", "github:backend#123")
+
+        result = self.run_daik("work", "status", "--json")
+        status = json.loads(result.stdout)
+
+        self.assertEqual(status["mode"], "run")
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(status["result_state"], "completed")
+        self.assertEqual(status["work"][0]["issue"], "github:backend#123")
+        self.assertEqual(status["work"][0]["status"], "stopped")
+
     def test_runs_program_state_without_invoking_an_agent(self) -> None:
         workflow = self.root / ".agents/daik-workflow.yaml"
         content = workflow.read_text(encoding="utf-8")

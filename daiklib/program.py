@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from daiklib.invocations import (
     InvocationError,
-    create_log_directory,
+    create_invocation_directory,
     write_private_json,
     write_private_text,
 )
@@ -85,7 +85,7 @@ class ProgramRunner:
         repository = state["repository"]
         timeout = state["timeout_seconds"]
         try:
-            invocation_id, log_directory = create_log_directory(self.site, issue)
+            invocation_id, log_directory = create_invocation_directory(self.site, issue)
         except InvocationError as error:
             raise ProgramRunnerError(str(error)) from error
 

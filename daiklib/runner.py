@@ -13,7 +13,7 @@ from typing import Any, Callable, Sequence
 
 from daiklib.invocations import (
     InvocationError,
-    create_log_directory,
+    create_invocation_directory,
     link_native_artifacts,
     write_private_json,
     write_private_text,
@@ -159,7 +159,7 @@ class AgentRunner:
         state, profile = self._state(state_name)
         profile_name = state["agent"]
         try:
-            invocation_id, log_directory = create_log_directory(self.site, issue)
+            invocation_id, log_directory = create_invocation_directory(self.site, issue)
         except InvocationError as error:
             raise RunnerError(str(error)) from error
         invocation = self._invocation(

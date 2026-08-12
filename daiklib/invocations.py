@@ -32,13 +32,13 @@ def state_root(environment: dict[str, str] | None = None) -> Path:
     return Path(home) / ".local" / "state" / "daik"
 
 
-def _key(label: str, identity: str) -> str:
+def state_key(label: str, identity: str) -> str:
     slug = safe_slug(label).rsplit("-", 1)[0]
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
     return f"{slug}-{digest}"
 
 
-def _ensure_private_directory(path: Path) -> None:
+def ensure_private_directory(path: Path) -> None:
     if path.is_symlink():
         raise InvocationError(f"state directory must not be a symlink: {path}")
     if path.exists():
@@ -52,19 +52,27 @@ def _ensure_private_directory(path: Path) -> None:
     path.chmod(0o700)
 
 
-def create_log_directory(site: Path, issue: str) -> tuple[str, Path]:
+def site_state_directory(site: Path) -> Path:
     root = state_root()
     if not root.is_absolute():
         raise InvocationError("daik state directory must be absolute")
     root = root.absolute()
-    _ensure_private_directory(root)
+    ensure_private_directory(root)
     site_resolved = site.resolve()
-    site_key = _key(site_resolved.name or "site", str(site_resolved))
-    issue_key = _key(issue, issue)
+    site_key = state_key(site_resolved.name or "site", str(site_resolved))
     parent = root
-    for component in ("sites", site_key, "logs", issue_key):
+    for component in ("sites", site_key):
         parent = parent / component
-        _ensure_private_directory(parent)
+        ensure_private_directory(parent)
+    return parent
+
+
+def create_invocation_directory(site: Path, issue: str) -> tuple[str, Path]:
+    issue_key = state_key(issue, issue)
+    parent = site_state_directory(site)
+    for component in ("invocations", issue_key):
+        parent = parent / component
+        ensure_private_directory(parent)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     invocation_id = str(uuid.uuid4())
     directory = parent / f"{timestamp}-{invocation_id}"
@@ -83,6 +91,19 @@ def write_private_text(path: Path, content: str) -> None:
     with path.open("x", encoding="utf-8") as stream:
         os.chmod(path, 0o600)
         stream.write(content)
+
+
+def replace_private_json(path: Path, value: Any) -> None:
+    if path.is_symlink():
+        raise InvocationError(f"state file must not be a symlink: {path}")
+    temporary = path.parent / f".{path.name}.{uuid.uuid4()}.tmp"
+    try:
+        write_private_json(temporary, value)
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def link_native_artifacts(directory: Path, artifacts: Any) -> list[dict[str, Any]]:

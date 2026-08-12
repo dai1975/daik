@@ -121,6 +121,7 @@ daik work handoff create
 daik work agent run
 daik work run
 daik work watch
+daik work status
 ```
 
 - `site packs`: list available packs
@@ -132,6 +133,7 @@ daik work watch
 - `work agent run`: invoke one agent state and emit transition and handoff events
 - `work run`: run the broker for one claimed Issue until it stops or reaches a final state
 - `work watch`: poll ready Issues and run up to the configured concurrency limit
+- `work status`: show the latest local broker run without contacting the tracker
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -229,6 +231,16 @@ Invocation records are stored outside the site under `DAIK_STATE_HOME`,
 `$XDG_STATE_HOME/daik`, or `$HOME/.local/state/daik`, in that order. When discoverable,
 the record links to Codex's native session transcript.
 
+Local state is separated by responsibility:
+
+```text
+sites/<site-id>/
+├── invocations/<issue-id>/<invocation-id>/
+└── broker-runs/<broker-run-id>/
+    ├── metadata.json
+    └── events.ndjson
+```
+
 Configure an executable tracker joint before running the broker. The joint maps
 daik control operations to the selected tracker and implements the stdio contract in
 `.agents/daik-tracker-joint-spec.md`:
@@ -287,13 +299,16 @@ exhausting retries, an Issue is suppressed until the watch process restarts.
 Use `--once` to perform one poll and wait for the submitted work, which is useful for
 scheduled jobs and diagnostics.
 
-The following commands are planned:
+Inspect the latest broker run, or select one by ID:
 
 ```sh
 daik work status
+daik work status --run BROKER_RUN_ID
+daik work status --json
 ```
 
-- `work status`: show running, retrying, and completed work
+Status reads only local broker-run records. Issue workflow state and handoff data
+remain authoritative in the tracker.
 
 ## Site
 

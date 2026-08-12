@@ -1,6 +1,6 @@
-# ADR 0002: CLI wrapperとInvocation log
+# ADR 0002: CLI wrapper、Invocation log、broker run log
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-12
 
 ## Context
@@ -46,9 +46,11 @@ directory layoutは次とする。
 <state-root>/
 └── sites/
     └── <site-slug>-<site-path-hash>/
-        └── logs/
-            └── <issue-slug>-<issue-hash>/
-                └── <UTC-timestamp>-<invocation-id>/
+        ├── invocations/
+        │   └── <issue-slug>-<issue-hash>/
+        │       └── <UTC-timestamp>-<invocation-id>/
+        └── broker-runs/
+            └── <UTC-timestamp>-<broker-run-id>/
 ```
 
 site keyはcanonical site path、Issue keyはprovider-native Issue IDから生成する。
@@ -66,7 +68,7 @@ daik runnerはCLI wrapper起動前にInvocation directoryをowner-only permissio
 ```json
 {
   "invocation_id": "0198f2a1-...",
-  "log_directory": "/home/user/.local/state/daik/sites/.../logs/.../..."
+  "log_directory": "/home/user/.local/state/daik/sites/.../invocations/.../..."
 }
 ```
 
@@ -147,9 +149,29 @@ daik runnerが保存する。worker agent自身はInvocation log directoryを知
 書き込み権限を必要としない。siteとworktreeだけを書き込み可能にするsandboxと
 両立させる。
 
+### 8. Broker processごとにstructured logを保存する
+
+`daik work run`と`daik work watch`は、processごとに`broker-runs/`以下へ
+owner-onlyのdirectoryを作成する。
+
+```text
+<broker-run-directory>/
+├── metadata.json
+└── events.ndjson
+```
+
+`metadata.json`はbroker run ID、mode、PID、開始・終了時刻、status、並行数を
+記録し、終了時に同一directory内のtemporary fileから原子的に置き換える。
+`events.ndjson`は`daik.broker-event.v1`を追記し、poll再試行、work投入、retry、
+停止、失敗、trackerへcommitされたIssue eventへの参照を含む。
+
+broker logは運用・debug・audit用であり、workflow復旧の正本にしない。
+`daik work status`はこのlocal logだけを読み、trackerへは接続しない。
+
 ## Consequences
 
 - siteをGit管理、共有、archiveしてもInvocation logが混入しにくい。
+- brokerのpolling、並行実行、retry、停止をprocess単位で追跡できる。
 - daik Invocationから製品固有session transcriptへ追跡できる。
 - native transcriptの重複保存を避けられる。
 - agent softwareのsession layout変更は対応するCLI wrapperだけに閉じ込められる。
@@ -159,7 +181,7 @@ daik runnerが保存する。worker agent自身はInvocation log directoryを知
 
 ## Deferred decisions
 
-- log一覧、検索、明示的archive、cleanup command
+- log検索、明示的archive、cleanup command
 - retention policyと容量上限
 - native sessionをcopyまたはarchiveする条件
 - stderrとeventの具体的なsize limitとredaction方式
