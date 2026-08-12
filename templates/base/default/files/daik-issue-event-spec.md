@@ -42,7 +42,7 @@ Tracker packs define the provider-specific container used for the event.
 - `program.started`: a deterministic command invocation began
 - `program.completed`: the command selected `succeeded`, `failed`, or `error`
 - `validation`, `review`, `blocked`, `artifact.linked`, and `completed`: reserved
-  for orchestrator and agent-run events
+  for broker and agent-run events
 
 ## Agent-run data
 

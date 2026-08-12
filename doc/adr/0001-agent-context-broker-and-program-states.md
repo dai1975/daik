@@ -1,4 +1,4 @@
-# ADR 0001: Agent context、orchestration、program stateの責務分離
+# ADR 0001: Agent context、broker、program stateの責務分離
 
 - Status: Accepted
 - Date: 2026-08-11
@@ -8,7 +8,7 @@
 daikは、一つのIssueを複数のcoding agentへ引き継ぎながら、決定的なworkflowに
 従って進行させる。現在のrunnerは、workflowの単一agent stateを外部agent
 commandで実行し、結果を標準入出力で受け取る。polling、tracker更新、state遷移を
-行うorchestratorは未実装である。
+行うbrokerは未実装である。
 
 設計には次の課題がある。
 
@@ -17,15 +17,15 @@ commandで実行し、結果を標準入出力で受け取る。polling、tracke
 - workerの完了報告をそのままstate遷移へ反映すると、未実行のtestや誤った報告を
   見逃す可能性がある。
 - 全判断をLLM orchestratorへ任せると、workflow制御自体が非決定的になる。
-- 全てのIssue更新をorchestratorへ集約すると、workerの作業contextが欠落し、
+- 全てのIssue更新をbrokerへ集約すると、workerの作業contextが欠落し、
   伝達遅延や中央のbottleneckが生じる。
 - test、lint、build、CI結果などはLLMを使わず機械的に判定できる。
 
 ## Decision
 
-### 1. Program orchestratorをworkflow制御の正本とする
+### 1. Agent Work Brokerをworkflow制御の正本とする
 
-orchestratorは決定的なプログラムとして実装し、次を担当する。
+brokerは決定的なプログラムとして実装し、次を担当する。
 
 - Issueのclaimとcurrent stateの更新
 - 許可されたtransitionかの検証
@@ -34,7 +34,7 @@ orchestratorは決定的なプログラムとして実装し、次を担当す�
 - agentとprogramの起動・終了監視
 - workflow制御eventのIssue trackerへの追記
 
-orchestratorはworkerの代わりに実装内容を判断・作文しない。意味的な判断が必要な
+brokerはworkerの代わりに実装内容を判断・作文しない。意味的な判断が必要な
 場合は、明示されたagent stateまたはhuman stateを使用する。
 
 ### 2. Workerは作業情報をIssueへ直接記録する
@@ -48,11 +48,11 @@ workerは、設定されたSkill、MCP、CLIなどを使ってIssueと過去のh
 - 次の担当者向けhandoffの内容
 
 一方、claim、current state、visit count、retryなどのworkflow制御情報は変更しない。
-workerはtransition候補とevidenceをorchestratorへ返し、最終的なstate更新は
-orchestratorが行う。
+workerはtransition候補とevidenceをbrokerへ返し、最終的なstate更新は
+brokerが行う。
 
 workerがtimeoutまたはcrashした場合も記録を残せるよう、`agent.started`、
-`agent.failed`など外側から観測できるeventはorchestratorが追記する。
+`agent.failed`など外側から観測できるeventはbrokerが追記する。
 
 ### 3. 共通agent contextと製品別CLI wrapperを分離する
 
@@ -84,7 +84,7 @@ workflow state typeに`program`を追加する。ここでいうprogramは、sof
 programと、あらかじめ定めた進行に沿って行うprogramの両方を意図する。`agent`、
 `human`と同じく実行主体を表し、LLMまたは人間による意味的判断を行わない。
 
-初期仕様の`program` stateは、orchestratorが単一の外部commandをshellを介さず
+初期仕様の`program` stateは、brokerが単一の外部commandをshellを介さず
 実行し、その終了結果を機械的にtransitionへ対応させる。実行方式を分類する
 sub-kindは設けない。将来command以外の実行方式が必要になった時点で、互換性を
 考慮して一般化する。
@@ -130,10 +130,10 @@ linkできる形にする。
 
 - workflowの進行は決定的に保たれ、意味的判断だけをagentまたは人間へ委譲できる。
 - workerが持つ詳細な作業contextをIssueへ直接残せる。
-- trackerへの同時更新と異常終了はorchestratorが一貫して処理できる。
+- trackerへの同時更新と異常終了はbrokerが一貫して処理できる。
 - 単純なtestやCI確認で追加LLM costが発生しない。
 - agent CLI wrapperとtracker jointという二種類の境界設計が必要になる。
-- worker用tracker権限とorchestrator用制御権限を分離する必要がある。
+- worker用tracker権限とbroker用制御権限を分離する必要がある。
 - `program` commandの安全なpath解決、timeout、出力制限、機密情報対策が必要になる。
 
 ## Deferred decisions

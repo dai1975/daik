@@ -20,7 +20,7 @@ languages:
   - en
 
 # Fragment contributed to the generated .agents/daik-config.yaml. The base
-# pack owns site-wide orchestrator settings such as workspace and polling.
+# pack owns site-wide broker settings such as workspace and polling.
 daik_config: daik-config/base.yaml
 
 # Localized Markdown fragments generated from this pack.

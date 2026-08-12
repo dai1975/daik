@@ -2,7 +2,7 @@
 
 [English](trackers.md)
 
-orchestratorはprovider非依存のIssue操作を要求する。tracker packはその操作を
+brokerはprovider非依存のIssue操作を要求する。tracker packはその操作を
 provider dataへmappingし、access方法はユーザーが選択する。
 
 provider非依存のdata操作は`issue.list_ready`、`issue.read`、`issue.create`、

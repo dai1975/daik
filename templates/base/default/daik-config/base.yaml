@@ -1,4 +1,4 @@
-# Base daik orchestrator configuration shared by all tracker packs.
+# Base daik broker configuration shared by all tracker packs.
 
 # Configuration schema version.
 version: 1
@@ -47,6 +47,6 @@ agent:
   # command:
   #   - daik-cli-wrapper-example
 
-# How frequently the orchestrator checks for eligible issues, in milliseconds.
+# How frequently the broker checks for eligible issues, in milliseconds.
 polling:
   interval_ms: 30000

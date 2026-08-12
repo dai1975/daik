@@ -13,7 +13,7 @@ coding agentを実行します。開発プロセスとtracker操作の指示は�
 > [!NOTE]
 > 現在は開発の初期段階です。siteを展開・診断する`init`、`validate`、`doctor`
 > コマンドを利用できます。GitHub IssuesとBeadsのmappingを利用でき、
-> orchestrationとagent実行機能は今後実装します。
+> agent実行と単一Issueのbroker実行も利用できます。pollingと並行実行は今後実装します。
 
 ## Goals
 
@@ -119,7 +119,7 @@ daik work run
 - `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
-- `work run`: 単一Issueをclaimし、停止またはfinal stateまで進行する
+- `work run`: claimした単一Issueをbrokerで停止またはfinal stateまで進行する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -214,7 +214,7 @@ Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
 `$HOME/.local/state/daik`の優先順で保存します。検出できた場合はCodex native session
 transcriptへのlinkも作成します。
 
-orchestratorを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
+brokerを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
 control operationを選択trackerへmappingし、`.agents/daik-tracker-joint-spec.md`の
 stdio契約を実装します。
 
@@ -338,7 +338,7 @@ MCP、CLIはユーザーが選び、生成された`<<DAIK:TRACKER_TOOL>>`を具
 
 #### `.agents/daik-worker.md`
 
-workerの責務とorchestrator controlを分離するユーザー所有ファイルです。workerは
+workerの責務とbroker controlを分離するユーザー所有ファイルです。workerは
 実質的な作業情報をIssueへ記録しますが、claim、workflow state、visit count、retry
 dataは変更しません。daik所有のagent context仕様がInvocationとCLI wrapperの
 protocolを定義します。
@@ -403,7 +403,7 @@ Issue tracker
 Tracker joint
       │ normalized Issue
       ▼
-Orchestrator
+Agent Work Broker
       │
       ├── Workspace manager
       │       └── workspaces/<issue>/
@@ -416,10 +416,11 @@ Symphonyが定義するscheduler、tracker joint、workspace manager、agent run
 責務分離を参考にしつつ、daikでは個人のsiteに展開して直接編集できる設定と
 workflowを重視します。
 
-オーケストレーターはIssueの選択、同時実行数、再試行、停止、workspaceの
+ブローカーはIssueの選択、同時実行数、再試行、停止、workspaceの
 ライフサイクルを管理します。Issueの具体的な処理方法は
 `.agents/daik-workflow.yaml`と`.agents/daik-tracker.md`に置き、site固有の知識を
-オーケストレーター本体へ組み込みません。
+ブローカー本体へ組み込みません。将来のLLM orchestratorは知的なmanagement workを
+担当しますが、brokerが選択・制御するagent workerとして実行します。
 
 ### Packs
 

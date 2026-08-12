@@ -8,14 +8,14 @@ import sys
 import tempfile
 import unittest
 
-from daiklib.orchestrator import pending_agent_completion, pending_program_completion
+from daiklib.broker import pending_agent_completion, pending_program_completion
 from daiklib.workspaces import event
 
 
 DAIK = Path(__file__).resolve().parents[1] / "daik"
 
 
-class OrchestratorTests(unittest.TestCase):
+class BrokerTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

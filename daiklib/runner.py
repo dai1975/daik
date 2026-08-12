@@ -1,4 +1,4 @@
-"""Run one coding-agent workflow state without persisting orchestration state."""
+"""Run one coding-agent workflow state without persisting broker control state."""
 
 from __future__ import annotations
 

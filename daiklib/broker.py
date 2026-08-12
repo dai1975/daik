@@ -1,4 +1,4 @@
-"""Deterministic single-Issue workflow orchestration."""
+"""Deterministic Agent Work Broker for one Issue."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, event
 
 
-class OrchestratorError(RuntimeError):
+class BrokerError(RuntimeError):
     pass
 
 
@@ -84,7 +84,7 @@ def pending_program_completion(
     return pending
 
 
-class Orchestrator:
+class Broker:
     def __init__(
         self,
         site: Path,
@@ -111,11 +111,11 @@ class Orchestrator:
         try:
             return self.joint.commit(issue, version, events, **control)
         except ControlConflict as error:
-            raise OrchestratorError(
+            raise BrokerError(
                 "tracker control changed concurrently; reload the Issue before retrying"
             ) from error
         except JointError as error:
-            raise OrchestratorError(str(error)) from error
+            raise BrokerError(str(error)) from error
 
     def _transition_event(
         self, issue: str, source: str, transition: str, target: str, count: int
@@ -140,7 +140,7 @@ class Orchestrator:
         try:
             snapshot = self.joint.read(issue)
         except JointError as error:
-            raise OrchestratorError(str(error)) from error
+            raise BrokerError(str(error)) from error
         version = snapshot["control_version"]
         history = snapshot["events"]
         has_started = any(
@@ -153,7 +153,7 @@ class Orchestrator:
             try:
                 workspace = WorkspaceManager(self.site, self.config).create(issue, ())
             except WorkspaceError as error:
-                raise OrchestratorError(str(error)) from error
+                raise BrokerError(str(error)) from error
             started = event("workflow.started", issue, {"state": self.initial})
             version = self._commit(
                 issue,
@@ -198,7 +198,7 @@ class Orchestrator:
                 if human_transition is not None:
                     selected = state["transitions"].get(human_transition)
                     if not isinstance(selected, dict):
-                        raise OrchestratorError(
+                        raise BrokerError(
                             f"undeclared human transition for {state_name}: {human_transition}"
                         )
                     control.transitions += 1
@@ -242,7 +242,7 @@ class Orchestrator:
                             issue, state_name, capture_program
                         )
                     except ProgramRunnerError as error:
-                        raise OrchestratorError(str(error)) from error
+                        raise BrokerError(str(error)) from error
                     pending = result.completed["data"]
                 if pending is not None:
                     transition_name = pending.get("transition")
@@ -251,7 +251,7 @@ class Orchestrator:
                         not isinstance(transition, dict)
                         or transition.get("to") != pending.get("to")
                     ):
-                        raise OrchestratorError(
+                        raise BrokerError(
                             "recorded program completion is not valid for current state"
                         )
                     target = transition["to"]
@@ -267,7 +267,7 @@ class Orchestrator:
                 control.visits[target] = control.visits.get(target, 0) + 1
                 continue
             if state_type != "agent":
-                raise OrchestratorError(f"unsupported workflow state type: {state_type}")
+                raise BrokerError(f"unsupported workflow state type: {state_type}")
 
             visits = control.visits.get(state_name, 0)
             if visits > state["max_visits"]:
@@ -282,7 +282,7 @@ class Orchestrator:
                     transition_name = pending.get("transition")
                     transition = state["transitions"].get(transition_name)
                     if not isinstance(transition, dict) or transition.get("to") != pending.get("to"):
-                        raise OrchestratorError("recorded agent completion is not valid for current state")
+                        raise BrokerError("recorded agent completion is not valid for current state")
                     target = transition["to"]
                 else:
                     captured: list[dict[str, Any]] = []
@@ -303,7 +303,7 @@ class Orchestrator:
                         transition_name = "on_error"
                         target = state["on_error"]["to"]
                     except RunnerError as error:
-                        raise OrchestratorError(str(error)) from error
+                        raise BrokerError(str(error)) from error
                     else:
                         transition_name = result.completed["data"]["transition"]
                         target = result.completed["data"]["to"]

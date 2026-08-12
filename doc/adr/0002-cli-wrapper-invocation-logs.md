@@ -136,7 +136,7 @@ Invocation directoryにはnative transcriptとは別に、daikの呼び出しと
 CLI wrapperのstdoutはprotocolとして検証し、正規化したrecordを`events.ndjson`へ
 保存する。診断用stderrは長さの上限を設けて保存する。
 
-これらはdebugとaudit用のartifactであり、workflow再開の正本ではない。orchestratorは
+これらはdebugとaudit用のartifactであり、workflow再開の正本ではない。brokerは
 local logだけからcurrent state、visit count、claimを復元せず、Issue trackerのcontrol
 eventを使用する。
 

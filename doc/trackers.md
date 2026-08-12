@@ -2,7 +2,7 @@
 
 [日本語](trackers.ja.md)
 
-The orchestrator requests provider-independent issue operations. Tracker packs
+The broker requests provider-independent issue operations. Tracker packs
 map those operations to provider data while the user chooses the access method.
 
 The provider-independent data operations are `issue.list_ready`, `issue.read`,

@@ -58,7 +58,7 @@ The native path and link are never tracker data.
 
 Tracker access is a separate semantic boundary implemented by a joint. Its protocol
 is defined in `.agents/daik-tracker-joint-spec.md`; a CLI wrapper must not implement
-orchestrator control updates.
+broker control updates.
 
 ## Codex CLI wrapper
 

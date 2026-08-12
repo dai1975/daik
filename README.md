@@ -15,8 +15,8 @@ The name comes from 大工, the Japanese word for carpenter.
 > [!NOTE]
 > daik is currently in an early stage of development. The `init`, `validate`,
 > and `doctor` commands can deploy and diagnose a site. GitHub Issues and Beads
-> mappings are available; orchestration and agent execution will be
-> implemented later.
+> mappings, agent execution, and single-Issue broker execution are available.
+> Polling and concurrent execution are planned.
 
 ## Goals
 
@@ -129,7 +129,7 @@ daik work run
 - `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
 - `work handoff create`: emit a structured event for the next agent role
 - `work agent run`: invoke one agent state and emit transition and handoff events
-- `work run`: claim and orchestrate one Issue until it stops or reaches a final state
+- `work run`: run the broker for one claimed Issue until it stops or reaches a final state
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -227,7 +227,7 @@ Invocation records are stored outside the site under `DAIK_STATE_HOME`,
 `$XDG_STATE_HOME/daik`, or `$HOME/.local/state/daik`, in that order. When discoverable,
 the record links to Codex's native session transcript.
 
-Configure an executable tracker joint before running the orchestrator. The joint maps
+Configure an executable tracker joint before running the broker. The joint maps
 daik control operations to the selected tracker and implements the stdio contract in
 `.agents/daik-tracker-joint-spec.md`:
 
@@ -356,7 +356,7 @@ MCP server, or CLI used to operate the tracker and replaces
 
 #### `.agents/daik-worker.md`
 
-This user-owned file separates worker responsibilities from orchestrator control.
+This user-owned file separates worker responsibilities from broker control.
 Workers record substantive work on the issue but do not modify claim, workflow state,
 visit count, or retry data. The daik-owned agent-context specification defines the
 Invocation and CLI wrapper protocols.
@@ -421,7 +421,7 @@ Issue tracker
 Tracker joint
       │ normalized Issue
       ▼
-Orchestrator
+Agent Work Broker
       │
       ├── Workspace manager
       │       └── workspaces/<issue>/
@@ -435,10 +435,12 @@ manager, and agent runner responsibilities, while emphasizing configuration
 and workflows that are deployed into and directly editable within a personal
 site.
 
-The orchestrator manages issue selection, concurrency, retries, stopping, and
+The broker manages issue selection, concurrency, retries, stopping, and
 the workspace lifecycle. Concrete issue-processing policy lives in
 `.agents/daik-workflow.yaml` and `.agents/daik-tracker.md`, keeping site-specific
-knowledge out of the orchestrator itself.
+knowledge out of the broker itself. A future LLM orchestrator may perform semantic
+management work, but it will run as an agent worker selected and controlled by the
+broker.
 
 ### Packs
 

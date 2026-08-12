@@ -12,7 +12,7 @@ daik:
 - Record investigation, implementation details, questions, validation evidence,
   review findings, commits, and artifact links directly on the issue.
 - Do not change the issue claim, workflow state, visit count, retry state, or other
-  orchestrator-owned control data.
+  broker-owned control data.
 - Work only on the current workflow state's task. Do not skip ahead to the next state.
 - Modify only the assigned checkouts under `workspaces/` and follow the site's
   `AGENTS.md` instructions.

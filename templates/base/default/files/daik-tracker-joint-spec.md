@@ -23,7 +23,7 @@ or `conflict`.
 
 ## Control version
 
-`control_version` is an opaque compare-and-set token for orchestrator-owned data. It
+`control_version` is an opaque compare-and-set token for broker-owned data. It
 must change after every successful `issue.commit_control`. Worker comments and other
 substantive Issue edits must not invalidate this token. This permits workers to write
 their findings directly while serializing claim and workflow transitions.
