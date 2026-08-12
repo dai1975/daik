@@ -22,13 +22,16 @@ class TrackerJoint:
         self.command = list(command)
         self.timeout = timeout_seconds
 
-    def call(self, operation: str, issue: str, **arguments: Any) -> dict[str, Any]:
+    def call(
+        self, operation: str, issue: str | None = None, **arguments: Any
+    ) -> dict[str, Any]:
         request = {
             "protocol_version": "daik.tracker-joint.v1",
             "operation": operation,
-            "issue": issue,
             **arguments,
         }
+        if issue is not None:
+            request["issue"] = issue
         try:
             process = subprocess.run(
                 self.command,
@@ -59,6 +62,21 @@ class TrackerJoint:
             message = response.get("message") or process.stderr.strip() or "tracker joint failed"
             raise JointError(str(message)[-1000:])
         return response
+
+    def list_ready(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
+        response = self.call("work.list_ready", limit=limit, exclude=list(exclude))
+        issues = response.get("issues")
+        if not isinstance(issues, list) or not all(
+            isinstance(issue, str) and issue for issue in issues
+        ):
+            raise JointError("work.list_ready must return a list of non-empty issue IDs")
+        if len(issues) > limit:
+            raise JointError("work.list_ready returned more issues than requested")
+        if len(set(issues)) != len(issues):
+            raise JointError("work.list_ready returned duplicate issue IDs")
+        if set(issues) & set(exclude):
+            raise JointError("work.list_ready returned an excluded issue ID")
+        return issues
 
     def read(self, issue: str) -> dict[str, Any]:
         response = self.call("issue.read_control", issue)

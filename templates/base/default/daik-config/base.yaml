@@ -50,3 +50,8 @@ agent:
 # How frequently the broker checks for eligible issues, in milliseconds.
 polling:
   interval_ms: 30000
+  # Number of retries after the initial polling or work-execution failure.
+  max_retries: 3
+  # Initial retry delay. Each subsequent retry doubles up to
+  # agent.max_retry_backoff_ms.
+  retry_initial_ms: 1000

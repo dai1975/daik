@@ -16,7 +16,7 @@ The name comes from 大工, the Japanese word for carpenter.
 > daik is currently in an early stage of development. The `init`, `validate`,
 > and `doctor` commands can deploy and diagnose a site. GitHub Issues and Beads
 > mappings, agent execution, and single-Issue broker execution are available.
-> Polling and concurrent execution are planned.
+> Polling, concurrent execution, and retry are available through `work watch`.
 
 ## Goals
 
@@ -120,6 +120,7 @@ daik work workspace remove
 daik work handoff create
 daik work agent run
 daik work run
+daik work watch
 ```
 
 - `site packs`: list available packs
@@ -130,6 +131,7 @@ daik work run
 - `work handoff create`: emit a structured event for the next agent role
 - `work agent run`: invoke one agent state and emit transition and handoff events
 - `work run`: run the broker for one claimed Issue until it stops or reaches a final state
+- `work watch`: poll ready Issues and run up to the configured concurrency limit
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
@@ -270,14 +272,27 @@ Exit status zero selects `succeeded`, another normal exit selects `failed`, and 
 execution failure or timeout selects `error`. Full output remains in the external
 Invocation logs; bounded result data is recorded on the Issue.
 
+Continuously poll and execute ready work with:
+
+```sh
+./daik/daik work watch
+```
+
+`agent.max_concurrent_agents` limits concurrent Issue runs. Polling uses
+`polling.interval_ms`; transient polling and broker failures use capped exponential
+backoff configured by `polling.max_retries`, `polling.retry_initial_ms`, and
+`agent.max_retry_backoff_ms`. A claim conflict is skipped rather than retried. After
+exhausting retries, an Issue is suppressed until the watch process restarts.
+
+Use `--once` to perform one poll and wait for the submitted work, which is useful for
+scheduled jobs and diagnostics.
+
 The following commands are planned:
 
 ```sh
-daik work watch
 daik work status
 ```
 
-- `work watch`: continuously monitor the issue tracker
 - `work status`: show running, retrying, and completed work
 
 ## Site

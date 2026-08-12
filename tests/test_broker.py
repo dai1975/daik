@@ -103,7 +103,12 @@ store = Path("tracker-state.json")
 state = json.loads(store.read_text()) if store.exists() else {
     "control_version": 0, "events": [], "status": "ready", "claimed": False
 }
-if request["operation"] == "issue.read_control":
+if request["operation"] == "work.list_ready":
+    issues = [] if state.get("close_reason") else ["github:backend#123"]
+    issues = [issue for issue in issues if issue not in request.get("exclude", [])]
+    response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "ok",
+                "issues": issues[:request["limit"]]}
+elif request["operation"] == "issue.read_control":
     response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "ok",
                 "control_version": str(state["control_version"]), "events": state["events"]}
 elif request["operation"] == "issue.commit_control":
@@ -183,6 +188,16 @@ print(json.dumps({
         second = json.loads((self.root / "tracker-state.json").read_text())
         self.assertEqual(first, second)
         self.assertEqual(json.loads(result.stdout)["state"], "completed")
+
+    def test_watch_once_polls_and_runs_ready_issue(self) -> None:
+        result = self.run_daik("work", "watch", "--once")
+
+        records = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertIn("work.submitted", [item["kind"] for item in records])
+        stopped = [item for item in records if item["kind"] == "work.stopped"]
+        self.assertEqual(stopped[0]["data"]["state"], "completed")
+        tracker = json.loads((self.root / "tracker-state.json").read_text())
+        self.assertEqual(tracker["close_reason"], "completed")
 
     def test_runs_program_state_without_invoking_an_agent(self) -> None:
         workflow = self.root / ".agents/daik-workflow.yaml"

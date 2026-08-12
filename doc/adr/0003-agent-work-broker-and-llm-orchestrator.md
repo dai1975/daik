@@ -37,8 +37,8 @@ Issue trackerとworkerの間でworkを配送し、次を担当する。
 - 競合検出とcrash recovery
 
 brokerは、実装内容、設計の妥当性、Issue分解などの意味的判断を行わない。CLIでは
-既存の`daik work run ISSUE`を単一workのbroker実行として維持し、pollingは将来の
-`daik work watch`に追加する。
+既存の`daik work run ISSUE`を単一workのbroker実行として維持し、pollingと並行実行は
+`daik work watch`が担当する。
 
 ### 知的な管理主体を暫定的にLLM orchestratorと呼ぶ
 

@@ -16,8 +16,8 @@ and writes one JSON response to stdout. Diagnostics go to stderr.
 
 ## Envelope
 
-Requests use `protocol_version: daik.tracker-joint.v1`, an `operation`, and a
-provider-native `issue` key. Responses use
+Requests use `protocol_version: daik.tracker-joint.v1`, an `operation`, and, except
+for collection operations, a provider-native `issue` key. Responses use
 `protocol_version: daik.tracker-joint-result.v1` and `status` equal to `ok`, `error`,
 or `conflict`.
 
@@ -27,6 +27,21 @@ or `conflict`.
 must change after every successful `issue.commit_control`. Worker comments and other
 substantive Issue edits must not invalidate this token. This permits workers to write
 their findings directly while serializing claim and workflow transitions.
+
+## `work.list_ready`
+
+This request has no `issue`. It contains a positive `limit` and an `exclude` list of
+provider-native Issue IDs already running or suppressed by this broker process. A
+successful response contains at most `limit` unique IDs in `issues`, ordered by the
+tracker pack's ready-work policy. It must not return an excluded ID.
+
+Eligible work includes both unclaimed ready Issues and non-final daik work that may
+need crash recovery. A joint may omit work that is protected by a provider-native
+unexpired lease. Without such a lease, control-version conflicts are the final guard
+against two brokers advancing the same Issue.
+
+Listing does not claim work. Multiple brokers may observe the same Issue; the
+compare-and-set claim in `issue.commit_control` determines which broker may run it.
 
 ## `issue.read_control`
 

@@ -46,8 +46,9 @@ the other three reasons. Preserve the human summary in a close comment.
 ## Required behavior
 
 - Ready selection requires open state, all configured required labels, a
-  non-blocked daik status, and no unresolved blocked-by dependencies.
-- Claiming is serialized by the scheduler and verifies that it did not replace
+  non-blocked daik status, and no unresolved blocked-by dependencies. Broker polling
+  also includes non-final daik work eligible for crash recovery.
+- Claiming is serialized by the broker and verifies that it did not replace
   a different assignee; GitHub assignment alone is not treated as atomic.
 - Replacing a status or close-reason label removes other labels in the same
   namespace without disturbing unrelated labels.
@@ -64,4 +65,3 @@ the other three reasons. Preserve the human summary in a close comment.
 
 Do not infer compatibility from API version alone. Do not mutate a live
 repository merely to perform a check.
-

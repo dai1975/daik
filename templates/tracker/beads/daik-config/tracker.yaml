@@ -1,4 +1,4 @@
-# Beads data-model selection and scheduler eligibility rules.
+# Beads data-model selection and broker eligibility rules.
 tracker:
   # Pack that defines the tracker operation mapping.
   pack: daik.tracker.beads
@@ -9,7 +9,8 @@ tracker:
   # Every required label must be present on a ready bead before dispatch.
   required_labels:
     - "daik:ready"
-  # Beads lifecycle states eligible for work and considered terminal.
+  # Beads lifecycle states eligible for new work and considered terminal.
+  # The joint also lists non-final daik work when crash recovery is needed.
   active_states:
     - open
   terminal_states:

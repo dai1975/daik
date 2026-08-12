@@ -18,10 +18,11 @@ from typing import Any, Final
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.joints import TrackerJoint
 from daiklib.broker import Broker, BrokerError
+from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.12.0"
+VERSION: Final = "0.13.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -1087,6 +1088,30 @@ class SiteValidator:
         interval = polling.get("interval_ms") if isinstance(polling, dict) else None
         if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
             self.report("ERROR", relative, "polling.interval_ms must be a positive integer")
+        if isinstance(polling, dict):
+            max_retries = polling.get("max_retries", 3)
+            if (
+                not isinstance(max_retries, int)
+                or isinstance(max_retries, bool)
+                or max_retries < 0
+            ):
+                self.report(
+                    "ERROR", relative, "polling.max_retries must be a non-negative integer"
+                )
+            if not positive_integer(polling.get("retry_initial_ms", 1000)):
+                self.report(
+                    "ERROR", relative, "polling.retry_initial_ms must be a positive integer"
+                )
+            elif (
+                isinstance(agent, dict)
+                and positive_integer(agent.get("max_retry_backoff_ms"))
+                and polling.get("retry_initial_ms", 1000) > agent["max_retry_backoff_ms"]
+            ):
+                self.report(
+                    "ERROR",
+                    relative,
+                    "polling.retry_initial_ms must not exceed agent.max_retry_backoff_ms",
+                )
         tracker = config.get("tracker")
         if not isinstance(tracker, dict) or not isinstance(tracker.get("pack"), str):
             self.report("ERROR", relative, "tracker.pack must be a string")
@@ -1523,6 +1548,53 @@ def work_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def work_watch(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        raise DaikError(f"site root is not a directory: {root}")
+    config = load_site_config(root)
+    workflow_path = root / ".agents/daik-workflow.yaml"
+    if not workflow_path.is_file():
+        raise DaikError(f"required workflow is missing: {workflow_path}")
+    workflow = parse_yaml_subset(workflow_path)
+    diagnostics = SiteValidator(root).validate()
+    errors = [item for item in diagnostics if item.severity == "ERROR"]
+    if errors:
+        raise DaikError(
+            "site validation failed before broker watch: "
+            + "; ".join(f"{item.path}: {item.message}" for item in errors)
+        )
+    tracker = config.get("tracker")
+    joint_command = tracker.get("joint") if isinstance(tracker, dict) else None
+    if not isinstance(joint_command, list) or not joint_command:
+        raise DaikError("tracker.joint must configure a tracker joint command")
+    joint = TrackerJoint(root, joint_command, tracker.get("joint_timeout_seconds", 30))
+    agent = config["agent"]
+    polling = config["polling"]
+
+    def emit(item: dict[str, Any]) -> None:
+        print(json.dumps(item, ensure_ascii=False, sort_keys=True), flush=True)
+
+    watcher = WorkWatcher(
+        lambda: Broker(root, config, workflow, joint),
+        joint,
+        agent["max_concurrent_agents"],
+        polling["interval_ms"],
+        polling.get("max_retries", 3),
+        polling.get("retry_initial_ms", 1000),
+        agent["max_retry_backoff_ms"],
+        emit,
+    )
+    try:
+        return watcher.run(once=args.once)
+    except WatchError as error:
+        print(f"Broker watch failed: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Broker watch stopped", file=sys.stderr)
+        return 130
+
+
 def add_template_dir_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template-dir",
@@ -1539,7 +1611,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage=(
             "%(prog)s [-h] [--version] <subcommand> ...\n"
             "       %(prog)s site <init | packs | validate | doctor> ...\n"
-            "       %(prog)s work <run | workspace | handoff | agent> ..."
+            "       %(prog)s work <run | watch | workspace | handoff | agent> ..."
         ),
         description="Issue-driven coding-agent workspace tools.",
     )
@@ -1598,6 +1670,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="select a declared transition when resuming a human state",
     )
     run_parser.set_defaults(handler=work_run)
+    watch_parser = work_subparsers.add_parser(
+        "watch", help="poll ready Issues and run brokers concurrently"
+    )
+    watch_parser.add_argument("--root", default=".", help="site root")
+    watch_parser.add_argument(
+        "--once", action="store_true", help="poll once and wait for submitted work"
+    )
+    watch_parser.set_defaults(handler=work_watch)
     workspace_parser = work_subparsers.add_parser(
         "workspace", help="manage per-issue Git worktrees"
     )

@@ -46,7 +46,8 @@ replace the machine-readable daik reason.
 ## Required behavior
 
 - Ready selection excludes closed, blocked, deferred, and dependency-blocked
-  issues, then applies all configured required labels.
+  issues, then applies all configured required labels. Broker polling also includes
+  non-final daik work eligible for crash recovery.
 - Assignment used for claiming is race-safe and cannot silently overwrite a
   different assignee.
 - Status stores the exact workflow value rather than a lossy approximation.
@@ -62,4 +63,3 @@ replace the machine-readable daik reason.
 
 Do not infer compatibility solely because the installed version is newer than
 the reference version. Do not mutate a live tracker merely to perform a check.
-

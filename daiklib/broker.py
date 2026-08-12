@@ -16,6 +16,10 @@ class BrokerError(RuntimeError):
     pass
 
 
+class BrokerConflict(BrokerError):
+    pass
+
+
 @dataclass
 class ControlState:
     state: str
@@ -111,7 +115,7 @@ class Broker:
         try:
             return self.joint.commit(issue, version, events, **control)
         except ControlConflict as error:
-            raise BrokerError(
+            raise BrokerConflict(
                 "tracker control changed concurrently; reload the Issue before retrying"
             ) from error
         except JointError as error:

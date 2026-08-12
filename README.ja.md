@@ -13,7 +13,8 @@ coding agentを実行します。開発プロセスとtracker操作の指示は�
 > [!NOTE]
 > 現在は開発の初期段階です。siteを展開・診断する`init`、`validate`、`doctor`
 > コマンドを利用できます。GitHub IssuesとBeadsのmappingを利用でき、
-> agent実行と単一Issueのbroker実行も利用できます。pollingと並行実行は今後実装します。
+> agent実行と単一Issueのbroker実行も利用できます。polling、並行実行、
+> 再試行は`work watch`で利用できます。
 
 ## Goals
 
@@ -110,6 +111,7 @@ daik work workspace remove
 daik work handoff create
 daik work agent run
 daik work run
+daik work watch
 ```
 
 - `site packs`: 利用可能なpackを一覧表示する
@@ -120,6 +122,7 @@ daik work run
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
 - `work run`: claimした単一Issueをbrokerで停止またはfinal stateまで進行する
+- `work watch`: ready Issueをpollし、設定した並行数まで実行する
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
@@ -256,14 +259,27 @@ exit status 0は`succeeded`、通常の非0終了は`failed`、起動失敗やti
 `error`を選びます。完全な出力はsite外のInvocation logに保存し、Issueには
 長さを制限した結果だけを記録します。
 
+ready workを継続的にpollして実行するには次を使います。
+
+```sh
+./daik/daik work watch
+```
+
+`agent.max_concurrent_agents`がIssueの同時実行数を制限します。polling間隔は
+`polling.interval_ms`、pollingやbrokerの一時的失敗に対する上限付き指数backoffは
+`polling.max_retries`、`polling.retry_initial_ms`、`agent.max_retry_backoff_ms`で
+設定します。claim競合は再試行せずskipします。再試行上限に達したIssueは、
+watch processを再起動するまで再投入しません。
+
+`--once`を付けると1回だけpollし、投入したworkの停止または完了を待ちます。
+定期実行や診断に利用できます。
+
 以下のコマンドは今後実装する予定です。
 
 ```sh
-daik work watch
 daik work status
 ```
 
-- `work watch`: Issue trackerを継続的に監視する
 - `work status`: 実行中、再試行待ち、完了した作業を表示する
 
 ## Site

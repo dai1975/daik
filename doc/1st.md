@@ -25,7 +25,7 @@
   [ADR 0003](adr/0003-agent-work-broker-and-llm-orchestrator.md))
 - [x] LLMを使用しないworkflow `program` state
   ([ADR 0001](adr/0001-agent-context-broker-and-program-states.md))
-- [ ] polling、並行実行、再試行
+- [x] polling、並行実行、再試行 (`daik work watch`)
 - [ ] structured logging と status 表示
   ([ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
 

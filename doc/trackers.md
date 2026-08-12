@@ -24,7 +24,7 @@ in `.agents/daik-tracker.md`.
 | --- | --- |
 | Ready queue | Open issues containing every configured required label |
 | Status | Exactly one `daik:status:<status>` label |
-| Assignment | GitHub assignee with scheduler-side claim serialization |
+| Assignment | GitHub assignee with broker-side claim serialization |
 | Dependencies | Native blocked-by relationships |
 | Claim | Assignment, `in_progress`, and work-label transition |
 | Phase | Phase value in the daik status label |

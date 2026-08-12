@@ -23,7 +23,7 @@ GitHub Issues packはdata modelの変更を規定し、access方法は規定し�
 | --- | --- |
 | Ready queue | 設定された必須labelを全て持つopen Issue |
 | Status | `daik:status:<status>` labelを一つだけ設定する |
-| Assignment | GitHub assignee。claimはscheduler側で直列化する |
+| Assignment | GitHub assignee。claimはbroker側で直列化する |
 | Dependencies | native blocked-by relationship |
 | Claim | assignment、`in_progress`、作業label遷移 |
 | Phase | phase値をdaik status labelへ保存する |

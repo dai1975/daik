@@ -17,7 +17,7 @@ MCP server、CLI、その他のaccess方法を使用する。
 - `issue.set_status(<status>)`: 既存の`daik:status:*` labelを全て外し、
   `daik:status:<status>`を一つだけ付ける。`issue.close`以外ではIssueをopenに保つ。
 - `issue.assign(<actor>)`: GitHub assigneeを設定する。GitHubのassignment自体には
-  compare-and-setがないため、claimではschedulerが直列化・再確認し、別workerを
+  compare-and-setがないため、claimではbrokerが直列化・再確認し、別workerを
   暗黙に上書きしない。
 - `issue.add_dependency(<blocker>)`: 現在のIssueから`<blocker>`へのnativeな
   blocked-by dependencyを追加する。
@@ -35,7 +35,7 @@ daik close reasonは`completed`、`duplicate`、`superseded`、`cancelled`とす
 標準workflowの上位actionは次の合成操作である。
 
 - `issue.claim`: workerを割り当て、daik statusを`in_progress`にし、
-  `daik:ready`を外して`daik:running`を付ける。claimはscheduler側で直列化する。
+  `daik:ready`を外して`daik:running`を付ける。claimはbroker側で直列化する。
 - `issue.set_phase(<phase>)`: `issue.set_status(<phase>)`を実行する。表示目的で
   `daik:phase:<phase>` labelにもmirrorしてよい。
 - `issue.block`: daik statusを`blocked`にし、判明しているnative dependencyを

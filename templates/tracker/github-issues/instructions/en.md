@@ -20,7 +20,7 @@ user-configured skill, MCP server, CLI, or other access method below.
   exactly one `daik:status:<status>` label. Keep the GitHub issue open unless the
   operation is `issue.close`.
 - `issue.assign(<actor>)`: Set the GitHub assignee. Assignment used as a claim
-  must not silently replace another worker; the scheduler must serialize and
+  must not silently replace another worker; the broker must serialize and
   verify claims because GitHub assignment itself is not compare-and-set.
 - `issue.add_dependency(<blocker>)`: Add a native blocked-by dependency from the
   current issue to `<blocker>`.
@@ -39,7 +39,7 @@ Allowed daik close reasons are `completed`, `duplicate`, `superseded`, and
 The standard workflow's higher-level actions are compositions:
 
 - `issue.claim`: assign the worker, set daik status to `in_progress`, remove
-  `daik:ready`, and add `daik:running`, with scheduler-side claim serialization.
+  `daik:ready`, and add `daik:running`, with broker-side claim serialization.
 - `issue.set_phase(<phase>)`: call `issue.set_status(<phase>)`. A site may also
   mirror it in a `daik:phase:<phase>` label for presentation.
 - `issue.block`: set daik status to `blocked`, add native dependencies when
