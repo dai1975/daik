@@ -141,6 +141,46 @@ class InitTests(unittest.TestCase):
         self.assertFalse((root / ".agents").exists())
         self.assertFalse((root / "workspaces").exists())
 
+    def test_wet_run_creates_missing_site_root(self) -> None:
+        parent = self.make_workspace()
+        root = parent / "new" / "site"
+
+        result = self.run_daik(
+            parent, "site", "init", "--root", str(root), "--wet-run"
+        )
+
+        self.assertIn(f"Created site root: {root}", result.stdout)
+        self.assertTrue((root / ".agents/daik-config.yaml").is_file())
+        self.assertTrue((root / ".daik/manifest.json").is_file())
+        self.assertTrue((root / "workspaces").is_dir())
+
+    def test_preview_does_not_create_missing_site_root(self) -> None:
+        parent = self.make_workspace()
+        root = parent / "new" / "site"
+
+        result = self.run_daik(parent, "site", "init", "--root", str(root))
+
+        self.assertIn(f"Would create site root: {root}", result.stdout)
+        self.assertIn("Preview only", result.stdout)
+        self.assertFalse(root.exists())
+
+    def test_init_rejects_file_as_site_root(self) -> None:
+        parent = self.make_workspace()
+        root = parent / "site"
+        root.write_text("not a directory\n", encoding="utf-8")
+
+        result = self.run_daik(
+            parent,
+            "site",
+            "init",
+            "--root",
+            str(root),
+            "--wet-run",
+            expected_returncode=2,
+        )
+
+        self.assertIn("workspace root is not a directory", result.stderr)
+
     def test_workspaces_path_must_be_a_directory(self) -> None:
         root = self.make_workspace()
         (root / "workspaces").write_text("not a directory\n", encoding="utf-8")

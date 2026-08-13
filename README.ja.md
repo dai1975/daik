@@ -71,6 +71,13 @@ workflowとtrackerは**pack**という単位でまとめられています。利
 ./daik/daik site init
 ```
 
+`--root`で存在しないdirectoryを指定した場合、`--wet-run`付きでは親directoryを
+含めて作成してからsiteを展開します。previewでは作成予定を表示するだけです。
+
+```sh
+./daik/daik site init --root ../new-site --wet-run
+```
+
 `site init`は既存ファイルを上書きしないため、同じpack選択で安全に再実行できます。
 初期化済みsiteで言語またはpack選択を変更しようとすると、ユーザー所有ファイルと
 manifestの不一致を避けるため中止します。

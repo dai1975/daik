@@ -79,6 +79,14 @@ any files.
 ./daik/daik site init
 ```
 
+When `--root` names a missing directory, `--wet-run` creates that directory and
+its parents before deploying the site. Preview mode reports the directory but does
+not create it.
+
+```sh
+./daik/daik site init --root ../new-site --wet-run
+```
+
 `site init` never overwrites existing files, so it is safe to run again with
 the same pack selection. If a different language or pack selection is requested
 for an initialized site, daik stops to avoid making the manifest inconsistent

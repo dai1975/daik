@@ -23,7 +23,7 @@ from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.14.0"
+VERSION: Final = "0.14.1"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -498,7 +498,8 @@ def check_existing_selection(root: Path, selected: list[Pack], language: str) ->
 
 def init_workspace(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
-    if not root.is_dir():
+    root_missing = not root.exists()
+    if not root_missing and not root.is_dir():
         raise DaikError(f"workspace root is not a directory: {root}")
 
     packs = discover_packs(template_roots(args.template_dir))
@@ -518,9 +519,14 @@ def init_workspace(args: argparse.Namespace) -> int:
             f"{tracker.id}: {', '.join(missing)}"
         )
 
+    templates = build_templates(selected, args.lang)
+    if root_missing and args.wet_run:
+        try:
+            root.mkdir(parents=True)
+        except OSError as error:
+            raise DaikError(f"could not create workspace root {root}: {error}") from error
     if args.wet_run:
         check_existing_selection(root, selected, args.lang)
-    templates = build_templates(selected, args.lang)
     records: dict[str, dict[str, str]] = {}
     created: list[str] = []
     existing: list[str] = []
@@ -590,6 +596,8 @@ def init_workspace(args: argparse.Namespace) -> int:
     for pack in selected:
         print(f"  {pack.kind}: {pack.id}")
     action = "Created" if args.wet_run else "Would create"
+    if root_missing:
+        print(f"{action} site root: {root}")
     for relative_name in created:
         print(f"{action}: {relative_name}")
     for relative_name in existing:
