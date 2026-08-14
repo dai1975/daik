@@ -18,16 +18,16 @@
 - [x] Issue eventによるagent間handoff
 - [x] coding agent runner
 - [x] 共通agent contextとagent CLI wrapperの設計・生成
-  ([ADR 0001](adr/0001-agent-context-broker-and-program-states.md),
-  [ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
+  ([ADR 0001](../adr/0001-agent-context-broker-and-program-states.md),
+  [ADR 0002](../adr/0002-cli-wrapper-invocation-logs.md))
 - [x] Agent Work BrokerによるIssue stateとcontrol eventの管理
-  ([ADR 0001](adr/0001-agent-context-broker-and-program-states.md),
-  [ADR 0003](adr/0003-agent-work-broker-and-llm-orchestrator.md))
+  ([ADR 0001](../adr/0001-agent-context-broker-and-program-states.md),
+  [ADR 0003](../adr/0003-agent-work-broker-and-llm-orchestrator.md))
 - [x] LLMを使用しないworkflow `program` state
-  ([ADR 0001](adr/0001-agent-context-broker-and-program-states.md))
+  ([ADR 0001](../adr/0001-agent-context-broker-and-program-states.md))
 - [x] polling、並行実行、再試行 (`daik work watch`)
 - [x] structured logging と status 表示 (`daik work status`)
-  ([ADR 0002](adr/0002-cli-wrapper-invocation-logs.md))
+  ([ADR 0002](../adr/0002-cli-wrapper-invocation-logs.md))
 
 ## Completion criteria
 
