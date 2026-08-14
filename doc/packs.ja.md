@@ -27,7 +27,7 @@ name:
 languages:
   - ja
   - en
-daik_config: daik-config/workflow.yaml
+site_config: config/workflow.yaml
 requires:
   - issue.read
   - issue.set_phase
@@ -53,7 +53,7 @@ files_daik:
 - `version`: pack形式の整数バージョン
 - `name`: 言語別の表示名
 - `languages`: 提供する自然言語
-- `daik_config`: 生成される`.agents/daik-config.yaml`へ追加する、pack内相対pathの
+- `site_config`: 生成される`.daik/config.yaml`へ追加する、pack内相対pathの
   YAML fragment。省略可能
 - `requires`: workflowがtrackerへ要求するcapability
 - `provides`: trackerが実現するcapability

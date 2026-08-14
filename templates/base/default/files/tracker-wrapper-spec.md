@@ -1,24 +1,24 @@
 ---
 daik:
   schema_version: 1
-  artifact: tracker-joint-spec
+  artifact: tracker-wrapper-spec
   ownership: daik
   user_action: reference
 ---
 
-# daik tracker joint protocol
+# daik tracker wrapper protocol
 
 Status: Draft v1
 
-A tracker joint maps daik's semantic Issue control operations to one concrete tracker.
+A tracker wrapper maps daik's semantic Issue control operations to one concrete tracker.
 It is an external command, runs from the site root, reads one JSON request from stdin,
 and writes one JSON response to stdout. Diagnostics go to stderr.
 
 ## Envelope
 
-Requests use `protocol_version: daik.tracker-joint.v1`, an `operation`, and, except
+Requests use `protocol_version: daik.tracker-wrapper.v1`, an `operation`, and, except
 for collection operations, a provider-native `issue` key. Responses use
-`protocol_version: daik.tracker-joint-result.v1` and `status` equal to `ok`, `error`,
+`protocol_version: daik.tracker-wrapper-result.v1` and `status` equal to `ok`, `error`,
 or `conflict`.
 
 ## Control version
@@ -36,7 +36,7 @@ successful response contains at most `limit` unique IDs in `issues`, ordered by 
 tracker pack's ready-work policy. It must not return an excluded ID.
 
 Eligible work includes both unclaimed ready Issues and non-final daik work that may
-need crash recovery. A joint may omit work that is protected by a provider-native
+need crash recovery. A wrapper may omit work that is protected by a provider-native
 unexpired lease. Without such a lease, control-version conflicts are the final guard
 against two brokers advancing the same Issue.
 
@@ -51,7 +51,7 @@ The successful response contains the current `control_version` and all append-on
 ## `issue.commit_control`
 
 The request contains `expected_control_version`, an `events` list, and optional
-`status`, `claim`, and `close_reason`. The joint applies them as one control operation.
+`status`, `claim`, and `close_reason`. The wrapper applies them as one control operation.
 It must not replace an existing incompatible claim. On a stale token or claim race it
 returns `status: conflict` without applying a partial update. Success returns the new
 `control_version`.
@@ -61,7 +61,7 @@ returns `status: conflict` without applying a partial update. Success returns th
 
 ## Idempotency and history
 
-Issue events are append-only and retain complete JSON envelopes. A joint should reject
+Issue events are append-only and retain complete JSON envelopes. A wrapper should reject
 duplicate event identities when it can do so, and must preserve event ordering within
 one commit. The Issue tracker remains the source of workflow state; local Invocation
 logs are diagnostic artifacts only.

@@ -172,7 +172,7 @@ control eventを使う。brokerが停止しても、新しいbrokerはIssueか�
 - 待機中にagent processを維持するcostとfailure modeを避けられる。
 - 新activationが前activationの暗黙contextを持たないため、checkpointとIssue記録の品質が
   重要になる。
-- agent result、Issue event、tracker joint、broker scheduling、status表示へactivationと
+- agent result、Issue event、tracker wrapper、broker scheduling、status表示へactivationと
   yield/resumeの概念を追加する必要がある。
 
 ## Deferred decisions

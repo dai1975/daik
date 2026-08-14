@@ -93,7 +93,7 @@ runpy.run_path("adapter.py", run_name="__main__")
 """ % json.dumps(transition),
             encoding="utf-8",
         )
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "  timeout_seconds: 3600\n",

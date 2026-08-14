@@ -132,7 +132,7 @@ linkできる形にする。
 - workerが持つ詳細な作業contextをIssueへ直接残せる。
 - trackerへの同時更新と異常終了はbrokerが一貫して処理できる。
 - 単純なtestやCI確認で追加LLM costが発生しない。
-- agent CLI wrapperとtracker jointという二種類の境界設計が必要になる。
+- agent CLI wrapperとtracker wrapperという二種類の境界設計が必要になる。
 - worker用tracker権限とbroker用制御権限を分離する必要がある。
 - `program` commandの安全なpath解決、timeout、出力制限、機密情報対策が必要になる。
 

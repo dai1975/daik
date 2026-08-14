@@ -30,7 +30,7 @@ name:
 languages:
   - ja
   - en
-daik_config: daik-config/workflow.yaml
+site_config: config/workflow.yaml
 requires:
   - issue.read
   - issue.set_phase
@@ -57,8 +57,8 @@ files_daik:
 - `version`: an integer version of the pack format
 - `name`: display names by language
 - `languages`: natural languages provided by the pack
-- `daik_config`: optional pack-relative YAML fragment appended to the generated
-  `.agents/daik-config.yaml`
+- `site_config`: optional pack-relative YAML fragment appended to the generated
+  `.daik/config.yaml`
 - `requires`: capabilities required by a workflow from its tracker
 - `provides`: capabilities implemented by a tracker
 - `contributions`: localized documents or Markdown fragments

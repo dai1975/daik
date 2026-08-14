@@ -71,7 +71,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_invalid_positive_integer_is_an_error(self) -> None:
         self.complete_user_setup()
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "max_concurrent_agents: 1", "max_concurrent_agents: 0"
@@ -146,7 +146,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_workflow_accepts_deterministic_program_state(self) -> None:
         self.complete_user_setup()
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "repositories:\n",

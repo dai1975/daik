@@ -2,15 +2,15 @@
 tracker:
   # Pack that defines the tracker operation mapping.
   pack: daik.tracker.beads
-  # Executable tracker joint implementing daik.tracker-joint.v1 over stdio.
-  # joint:
-  #   - daik-joint-beads
-  joint_timeout_seconds: 30
+  # Executable tracker wrapper implementing daik.tracker-wrapper.v1 over stdio.
+  # wrapper:
+  #   - daik-tracker-wrapper-beads
+  wrapper_timeout_seconds: 30
   # Every required label must be present on a ready bead before dispatch.
   required_labels:
     - "daik:ready"
   # Beads lifecycle states eligible for new work and considered terminal.
-  # The joint also lists non-final daik work when crash recovery is needed.
+  # The wrapper also lists non-final daik work when crash recovery is needed.
   active_states:
     - open
   terminal_states:

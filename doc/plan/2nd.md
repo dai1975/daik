@@ -3,7 +3,7 @@
 第2マイルストーンでは、実際に開発中のMakepad GUI applicationへdaikを適用し、
 要件分析、実装、機械的検証、人間によるUI評価までをIssue tracker上で運用する。
 新しい抽象機能を先に一般化しすぎず、実作業で生じた摩擦を記録しながらworkflow、
-broker、tracker joint、agent contextを洗練する。
+broker、tracker wrapper、agent contextを洗練する。
 
 関連する設計判断:
 
@@ -94,7 +94,7 @@ broker、tracker joint、agent contextを洗練する。
 ### 8. Refinement and stabilization
 
 - [ ] pilotで不要だった設定、event、用語を削減する
-- [ ] 頻出した手動操作をcommand、skill、joint operationのどこへ置くか整理する
+- [ ] 頻出した手動操作をcommand、skill、tracker wrapper operationのどこへ置くか整理する
 - [ ] standard workflowを実運用結果に基づいて更新する
 - [ ] GitHub Issues jointのreference implementationまたは実用例を用意する
 - [ ] operator向けstatusとlog表示でwaiting、attached、retryingを追跡できるようにする

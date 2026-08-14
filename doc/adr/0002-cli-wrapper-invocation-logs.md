@@ -14,9 +14,9 @@ Invocation規約と各agent CLIの間に変換componentが必要である。ま�
 分かりにくい。このためdaik固有の用語を次のように区別する。
 
 - **CLI wrapper**: daik Invocationとagent CLIのprocess規約を機械的に変換する
-- **joint**: daikの意味的な中間operationとtrackerなど外部toolのmodelをmappingする
+- **tracker wrapper**: daikの意味的な中間operationをtrackerのAPIやCLIへ変換する
 
-CLI wrapperはworkflowやIssue operationの意味を判断しない。jointは一般的な
+CLI wrapperはworkflowやIssue operationの意味を判断しない。tracker wrapperは一般的な
 adapter patternにおけるdaik固有のcomponent名である。
 
 agent softwareは通常、native session transcriptを自身のstate directoryへ保存する。
@@ -35,7 +35,7 @@ daikが同じtranscriptを複製すると、容量、機密情報、retentionの
 3. `$HOME/.local/state/daik`
 
 `DAIK_STATE_HOME`はdaik rootそのものとし、末尾へさらに`daik`を追加しない。
-siteに含まれる`.agents/daik-config.yaml`からstate rootを変更できないものとする。
+siteに含まれる`.daik/config.yaml`からstate rootを変更できないものとする。
 他OSの標準directoryへのmappingはdaik command内へ将来追加する。
 
 ### 2. Site、Issue、Invocationごとにdirectoryを分ける

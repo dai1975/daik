@@ -4,15 +4,15 @@
 tracker:
   # Pack that defines the tracker operations in daik-tracker.md.
   pack: daik.tracker.github-issues
-  # Executable tracker joint implementing daik.tracker-joint.v1 over stdio.
-  # joint:
-  #   - daik-joint-github-issues
-  joint_timeout_seconds: 30
+  # Executable tracker wrapper implementing daik.tracker-wrapper.v1 over stdio.
+  # wrapper:
+  #   - daik-tracker-wrapper-github-issues
+  wrapper_timeout_seconds: 30
   # Every required label must be present before an issue can be dispatched.
   required_labels:
     - "daik:ready"
   # Provider-native states eligible for new work and considered terminal.
-  # The joint also lists non-final daik work when crash recovery is needed.
+  # The wrapper also lists non-final daik work when crash recovery is needed.
   active_states:
     - open
   terminal_states:

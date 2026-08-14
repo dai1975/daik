@@ -11,7 +11,7 @@ the user in `.agents/daik-tracker.md`.
 
 ## Procedure
 
-1. Confirm that `.agents/daik-config.yaml` selects
+1. Confirm that `.daik/config.yaml` selects
    `daik.tracker.github-issues`.
 2. Read `.daik/github-issues-spec.md`. This explicit user request authorizes
    reading that otherwise-internal file; do not inspect unrelated `.daik/`

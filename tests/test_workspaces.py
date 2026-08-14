@@ -26,7 +26,7 @@ class WorkspaceTests(unittest.TestCase):
         self.run_command("git", "-C", str(repository), "add", "README.md")
         self.run_command("git", "-C", str(repository), "commit", "-m", "initial")
         self.run_command("git", "-C", str(repository), "branch", "-M", "main")
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         content = config.read_text(encoding="utf-8")
         content = content.replace(
             "repositories:\n\n",

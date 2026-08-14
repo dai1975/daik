@@ -29,7 +29,7 @@ class BrokerTests(unittest.TestCase):
         tracker = self.root / ".agents/daik-tracker.md"
         tracker.write_text(
             tracker.read_text(encoding="utf-8").replace(
-                "<<DAIK:TRACKER_TOOL>>", "the configured test joint"
+                "<<DAIK:TRACKER_TOOL>>", "the configured test wrapper"
             ),
             encoding="utf-8",
         )
@@ -43,9 +43,9 @@ class BrokerTests(unittest.TestCase):
         (self.repo / "README.md").write_text("test\n", encoding="utf-8")
         subprocess.run(["git", "add", "README.md"], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=self.repo, check=True)
-        self.make_joint()
-        self.make_wrapper()
-        config = self.root / ".agents/daik-config.yaml"
+        self.make_tracker_wrapper()
+        self.make_agent_wrapper()
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8")
             .replace(
@@ -57,14 +57,14 @@ class BrokerTests(unittest.TestCase):
                 "  timeout_seconds: 30\n"
                 "  command:\n"
                 f"    - {json.dumps(sys.executable)}\n"
-                f"    - {json.dumps(str(self.wrapper))}\n",
+                f"    - {json.dumps(str(self.agent_wrapper))}\n",
             )
             .replace(
-                "  joint_timeout_seconds: 30\n",
-                "  joint_timeout_seconds: 30\n"
-                "  joint:\n"
+                "  wrapper_timeout_seconds: 30\n",
+                "  wrapper_timeout_seconds: 30\n"
+                "  wrapper:\n"
                 f"    - {json.dumps(sys.executable)}\n"
-                f"    - {json.dumps(str(self.joint))}\n",
+                f"    - {json.dumps(str(self.tracker_wrapper))}\n",
             ),
             encoding="utf-8",
         )
@@ -90,9 +90,9 @@ class BrokerTests(unittest.TestCase):
         )
         return result
 
-    def make_joint(self) -> None:
-        self.joint = self.root / "joint.py"
-        self.joint.write_text(
+    def make_tracker_wrapper(self) -> None:
+        self.tracker_wrapper = self.root / "tracker-wrapper.py"
+        self.tracker_wrapper.write_text(
             """\
 import json
 from pathlib import Path
@@ -106,14 +106,14 @@ state = json.loads(store.read_text()) if store.exists() else {
 if request["operation"] == "work.list_ready":
     issues = [] if state.get("close_reason") else ["github:backend#123"]
     issues = [issue for issue in issues if issue not in request.get("exclude", [])]
-    response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "ok",
+    response = {"protocol_version": "daik.tracker-wrapper-result.v1", "status": "ok",
                 "issues": issues[:request["limit"]]}
 elif request["operation"] == "issue.read_control":
-    response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "ok",
+    response = {"protocol_version": "daik.tracker-wrapper-result.v1", "status": "ok",
                 "control_version": str(state["control_version"]), "events": state["events"]}
 elif request["operation"] == "issue.commit_control":
     if request["expected_control_version"] != str(state["control_version"]):
-        response = {"protocol_version": "daik.tracker-joint-result.v1",
+        response = {"protocol_version": "daik.tracker-wrapper-result.v1",
                     "status": "conflict", "message": "stale control version"}
     else:
         state["events"].extend(request["events"])
@@ -125,19 +125,19 @@ elif request["operation"] == "issue.commit_control":
             state["close_reason"] = request["close_reason"]
         state["control_version"] += 1
         store.write_text(json.dumps(state))
-        response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "ok",
+        response = {"protocol_version": "daik.tracker-wrapper-result.v1", "status": "ok",
                     "control_version": str(state["control_version"])}
 else:
-    response = {"protocol_version": "daik.tracker-joint-result.v1", "status": "error",
+    response = {"protocol_version": "daik.tracker-wrapper-result.v1", "status": "error",
                 "message": "unsupported operation"}
 print(json.dumps(response))
 """,
             encoding="utf-8",
         )
 
-    def make_wrapper(self) -> None:
-        self.wrapper = self.root / "wrapper.py"
-        self.wrapper.write_text(
+    def make_agent_wrapper(self) -> None:
+        self.agent_wrapper = self.root / "agent-wrapper.py"
+        self.agent_wrapper.write_text(
             """\
 import json
 import sys
@@ -252,8 +252,8 @@ print(json.dumps({
         self.assertEqual(testing_agents, [])
 
     def test_human_state_requires_declared_resume_transition(self) -> None:
-        content = self.wrapper.read_text(encoding="utf-8")
-        self.wrapper.write_text(
+        content = self.agent_wrapper.read_text(encoding="utf-8")
+        self.agent_wrapper.write_text(
             content.replace('"implementation": "ready_for_testing"',
                             '"implementation": "needs_human"'),
             encoding="utf-8",

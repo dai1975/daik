@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable
 
 from daiklib.broker import Broker, BrokerConflict, BrokerError
-from daiklib.joints import JointError, TrackerJoint
+from daiklib.tracker_wrapper import TrackerWrapperError, TrackerWrapper
 
 
 class WatchError(RuntimeError):
@@ -19,7 +19,7 @@ class WorkWatcher:
     def __init__(
         self,
         broker_factory: Callable[[], Broker],
-        joint: TrackerJoint,
+        wrapper: TrackerWrapper,
         concurrency: int,
         interval_ms: int,
         max_retries: int,
@@ -29,7 +29,7 @@ class WorkWatcher:
         sleep: Callable[[float], None] = time.sleep,
     ):
         self.broker_factory = broker_factory
-        self.joint = joint
+        self.wrapper = wrapper
         self.concurrency = concurrency
         self.interval = interval_ms / 1000
         self.max_retries = max_retries
@@ -107,10 +107,10 @@ class WorkWatcher:
                 available = self.concurrency - len(active)
                 if available > 0:
                     try:
-                        issues = self.joint.list_ready(
+                        issues = self.wrapper.list_ready(
                             available, sorted(active_issues | suppressed_issues)
                         )
-                    except JointError as error:
+                    except TrackerWrapperError as error:
                         if poll_failures >= self.max_retries:
                             raise WatchError(
                                 f"ready-work polling failed after {poll_failures + 1} attempts: {error}"

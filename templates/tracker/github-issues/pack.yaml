@@ -18,8 +18,8 @@ languages:
   - ja
   - en
 
-# Tracker-specific fragment contributed to .agents/daik-config.yaml.
-daik_config: daik-config/tracker.yaml
+# Tracker-specific fragment contributed to .daik/config.yaml.
+site_config: config/tracker.yaml
 
 # Portable issue actions implemented by this tracker pack. Workflow packs can
 # be combined with this pack only when all of their `requires` are provided.

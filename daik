@@ -16,14 +16,14 @@ import tempfile
 from typing import Any, Final
 
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
-from daiklib.joints import TrackerJoint
+from daiklib.tracker_wrapper import TrackerWrapper
 from daiklib.broker import Broker, BrokerError
 from daiklib.broker_runs import BrokerRunError, BrokerRunLog, broker_run_status
 from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.14.2"
+VERSION: Final = "0.15.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -218,9 +218,9 @@ def validate_pack(pack: Pack) -> None:
     mapping(pack.data, "contributions", pack.path)
     mapping(pack.data, "files_user", pack.path)
     mapping(pack.data, "files_daik", pack.path)
-    daik_config = pack.data.get("daik_config")
-    if daik_config is not None and not isinstance(daik_config, str):
-        raise DaikError(f"{pack.path}: daik_config must be a path string")
+    site_config = pack.data.get("site_config")
+    if site_config is not None and not isinstance(site_config, str):
+        raise DaikError(f"{pack.path}: site_config must be a path string")
 
 
 def template_roots(extra_roots: list[str]) -> list[Path]:
@@ -342,10 +342,10 @@ def read_static_files(packs: list[Pack]) -> dict[str, tuple[str, str]]:
     return files
 
 
-def read_daik_config(packs: list[Pack]) -> str:
+def read_site_config(packs: list[Pack]) -> str:
     fragments: list[str] = []
     for pack in packs:
-        source_name = pack.data.get("daik_config")
+        source_name = pack.data.get("site_config")
         if source_name is None:
             continue
         source = safe_pack_source(pack, source_name)
@@ -398,7 +398,7 @@ def safe_workspace_target(root: Path, relative_name: str) -> Path:
 
 def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str, str]]:
     templates = read_static_files(selected)
-    templates[".agents/daik-config.yaml"] = ("user", read_daik_config(selected))
+    templates[".daik/config.yaml"] = ("user", read_site_config(selected))
     agents_parts = read_contributions(selected, "agents", language)
     workflow_parts = read_contributions(selected, "workflow", language)
     tracker_parts = read_contributions(selected, "tracker", language)
@@ -614,7 +614,7 @@ def init_workspace(args: argparse.Namespace) -> int:
         print("Next: copy the tagged block from .daik/daik-AGENTS.md.template to AGENTS.md")
     if args.wet_run:
         print("Next: replace <<DAIK:SITE_GUIDE>> in the copied AGENTS.md block")
-        print("Next: review .agents/daik-config.yaml")
+        print("Next: review .daik/config.yaml")
         print("Next: review .agents/daik-workflow.yaml")
         print("Next: review .agents/daik-tracker.md and replace <<DAIK:TRACKER_TOOL>>")
     return 0
@@ -898,9 +898,9 @@ class SiteValidator:
             ".agents/daik-agent-context-spec.md", "agent-context-spec", "daik", "reference"
         )
         self.document_metadata(
-            ".agents/daik-tracker-joint-spec.md", "tracker-joint-spec", "daik", "reference"
+            ".daik/tracker-wrapper-spec.md", "tracker-wrapper-spec", "daik", "reference"
         )
-        config = self.load_yaml(".agents/daik-config.yaml")
+        config = self.load_yaml(".daik/config.yaml")
         agents = self.load_text("AGENTS.md")
 
         if agents is not None:
@@ -975,7 +975,7 @@ class SiteValidator:
             ):
                 self.report(
                     "ERROR",
-                    ".agents/daik-config.yaml",
+                    ".daik/config.yaml",
                     "tracker.pack does not match the tracker document",
                 )
         if manifest is not None:
@@ -995,7 +995,7 @@ class SiteValidator:
         return self.diagnostics
 
     def validate_config(self, config: dict[str, Any]) -> None:
-        relative = ".agents/daik-config.yaml"
+        relative = ".daik/config.yaml"
         document = config.get("daik_document")
         expected = {
             "schema_version": 1,
@@ -1125,18 +1125,18 @@ class SiteValidator:
         if not isinstance(tracker, dict) or not isinstance(tracker.get("pack"), str):
             self.report("ERROR", relative, "tracker.pack must be a string")
         else:
-            joint = tracker.get("joint")
-            if joint is not None and (
-                not isinstance(joint, list)
-                or not joint
-                or not all(isinstance(item, str) and item for item in joint)
+            wrapper = tracker.get("wrapper")
+            if wrapper is not None and (
+                not isinstance(wrapper, list)
+                or not wrapper
+                or not all(isinstance(item, str) and item for item in wrapper)
             ):
                 self.report(
-                    "ERROR", relative, "tracker.joint must be a non-empty list of command arguments"
+                    "ERROR", relative, "tracker.wrapper must be a non-empty list of command arguments"
                 )
-            if not positive_integer(tracker.get("joint_timeout_seconds", 30)):
+            if not positive_integer(tracker.get("wrapper_timeout_seconds", 30)):
                 self.report(
-                    "ERROR", relative, "tracker.joint_timeout_seconds must be a positive integer"
+                    "ERROR", relative, "tracker.wrapper_timeout_seconds must be a positive integer"
                 )
             if any(
                 not isinstance(tracker.get(key), list)
@@ -1153,7 +1153,7 @@ class SiteValidator:
                 self.report(
                     "ERROR",
                     relative,
-                    "tracker access must be user-configured in daik-tracker.md, not as a tracker command",
+                    "tracker execution must be configured with tracker.wrapper",
                 )
 
     def validate_manifest(
@@ -1265,7 +1265,7 @@ def doctor_site(args: argparse.Namespace) -> int:
 
     diagnostics = SiteValidator(root).validate()
     config: dict[str, Any] | None = None
-    config_path = root / ".agents/daik-config.yaml"
+    config_path = root / ".daik/config.yaml"
     if config_path.is_file():
         try:
             config = parse_yaml_subset(config_path)
@@ -1338,23 +1338,23 @@ def doctor_site(args: argparse.Namespace) -> int:
             )
         )
     tracker_settings = config.get("tracker") if isinstance(config, dict) else None
-    tracker_joint = (
-        tracker_settings.get("joint") if isinstance(tracker_settings, dict) else None
+    tracker_wrapper = (
+        tracker_settings.get("wrapper") if isinstance(tracker_settings, dict) else None
     )
-    if not isinstance(tracker_joint, list) or not tracker_joint:
+    if not isinstance(tracker_wrapper, list) or not tracker_wrapper:
         diagnostics.append(
             Diagnostic(
                 "WARNING",
                 "tracker",
-                "tracker.joint is not configured; work run is unavailable",
+                "tracker.wrapper is not configured; work run is unavailable",
             )
         )
-    elif shutil.which(tracker_joint[0]) is None:
+    elif shutil.which(tracker_wrapper[0]) is None:
         diagnostics.append(
             Diagnostic(
                 "ERROR",
                 "tracker",
-                f"joint executable was not found on PATH: {tracker_joint[0]}",
+                f"wrapper executable was not found on PATH: {tracker_wrapper[0]}",
             )
         )
     else:
@@ -1362,7 +1362,7 @@ def doctor_site(args: argparse.Namespace) -> int:
             Diagnostic(
                 "INFO",
                 "tracker",
-                f"tracker joint command is available: {tracker_joint[0]}",
+                f"tracker wrapper command is available: {tracker_wrapper[0]}",
             )
         )
     agent_settings = config.get("agent") if isinstance(config, dict) else None
@@ -1404,7 +1404,7 @@ def doctor_site(args: argparse.Namespace) -> int:
 
 
 def load_site_config(root: Path) -> dict[str, Any]:
-    path = root / ".agents/daik-config.yaml"
+    path = root / ".daik/config.yaml"
     if not path.is_file():
         raise DaikError(f"required configuration is missing: {path}")
     return parse_yaml_subset(path)
@@ -1537,11 +1537,11 @@ def work_run(args: argparse.Namespace) -> int:
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
     tracker = config.get("tracker")
-    joint_command = tracker.get("joint") if isinstance(tracker, dict) else None
-    if not isinstance(joint_command, list) or not joint_command:
-        raise DaikError("tracker.joint must configure a tracker joint command")
-    joint_timeout = tracker.get("joint_timeout_seconds", 30)
-    joint = TrackerJoint(root, joint_command, joint_timeout)
+    wrapper_command = tracker.get("wrapper") if isinstance(tracker, dict) else None
+    if not isinstance(wrapper_command, list) or not wrapper_command:
+        raise DaikError("tracker.wrapper must configure a tracker wrapper command")
+    wrapper_timeout = tracker.get("wrapper_timeout_seconds", 30)
+    wrapper = TrackerWrapper(root, wrapper_command, wrapper_timeout)
     try:
         run_log = BrokerRunLog(root, "run", 1)
         run_log.record("run.started", mode="run", issue=args.issue, concurrency=1)
@@ -1554,7 +1554,7 @@ def work_run(args: argparse.Namespace) -> int:
         run_log.record("work.event", issue=args.issue, event=item)
 
     try:
-        final_state = Broker(root, config, workflow, joint).run(
+        final_state = Broker(root, config, workflow, wrapper).run(
             args.issue, emit, args.transition
         )
     except BrokerError as error:
@@ -1592,10 +1592,10 @@ def work_watch(args: argparse.Namespace) -> int:
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
     tracker = config.get("tracker")
-    joint_command = tracker.get("joint") if isinstance(tracker, dict) else None
-    if not isinstance(joint_command, list) or not joint_command:
-        raise DaikError("tracker.joint must configure a tracker joint command")
-    joint = TrackerJoint(root, joint_command, tracker.get("joint_timeout_seconds", 30))
+    wrapper_command = tracker.get("wrapper") if isinstance(tracker, dict) else None
+    if not isinstance(wrapper_command, list) or not wrapper_command:
+        raise DaikError("tracker.wrapper must configure a tracker wrapper command")
+    wrapper = TrackerWrapper(root, wrapper_command, tracker.get("wrapper_timeout_seconds", 30))
     agent = config["agent"]
     polling = config["polling"]
 
@@ -1615,8 +1615,8 @@ def work_watch(args: argparse.Namespace) -> int:
         print(json.dumps(record, ensure_ascii=False, sort_keys=True), flush=True)
 
     watcher = WorkWatcher(
-        lambda: Broker(root, config, workflow, joint),
-        joint,
+        lambda: Broker(root, config, workflow, wrapper),
+        wrapper,
         agent["max_concurrent_agents"],
         polling["interval_ms"],
         polling.get("max_retries", 3),

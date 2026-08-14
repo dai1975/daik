@@ -1,4 +1,4 @@
-"""Process boundary for tracker joints."""
+"""Process boundary for tracker wrappers."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ import subprocess
 from typing import Any, Sequence
 
 
-class JointError(RuntimeError):
+class TrackerWrapperError(RuntimeError):
     pass
 
 
-class ControlConflict(JointError):
+class ControlConflict(TrackerWrapperError):
     pass
 
 
-class TrackerJoint:
+class TrackerWrapper:
     def __init__(self, site: Path, command: Sequence[str], timeout_seconds: int = 30):
         self.site = site
         self.command = list(command)
@@ -26,7 +26,7 @@ class TrackerJoint:
         self, operation: str, issue: str | None = None, **arguments: Any
     ) -> dict[str, Any]:
         request = {
-            "protocol_version": "daik.tracker-joint.v1",
+            "protocol_version": "daik.tracker-wrapper.v1",
             "operation": operation,
             **arguments,
         }
@@ -44,23 +44,23 @@ class TrackerJoint:
                 check=False,
             )
         except subprocess.TimeoutExpired as error:
-            raise JointError(f"tracker joint timed out after {self.timeout} seconds") from error
+            raise TrackerWrapperError(f"tracker wrapper timed out after {self.timeout} seconds") from error
         except OSError as error:
-            raise JointError(f"could not start tracker joint: {error}") from error
+            raise TrackerWrapperError(f"could not start tracker wrapper: {error}") from error
         try:
             response = json.loads(process.stdout)
         except json.JSONDecodeError as error:
             detail = process.stderr.strip() or process.stdout.strip()
-            raise JointError(f"tracker joint returned invalid JSON: {detail[-1000:]}") from error
+            raise TrackerWrapperError(f"tracker wrapper returned invalid JSON: {detail[-1000:]}") from error
         if not isinstance(response, dict):
-            raise JointError("tracker joint response root must be an object")
-        if response.get("protocol_version") != "daik.tracker-joint-result.v1":
-            raise JointError("tracker joint returned an unsupported protocol_version")
+            raise TrackerWrapperError("tracker wrapper response root must be an object")
+        if response.get("protocol_version") != "daik.tracker-wrapper-result.v1":
+            raise TrackerWrapperError("tracker wrapper returned an unsupported protocol_version")
         if response.get("status") == "conflict":
             raise ControlConflict(response.get("message", "tracker control version conflict"))
         if process.returncode or response.get("status") != "ok":
-            message = response.get("message") or process.stderr.strip() or "tracker joint failed"
-            raise JointError(str(message)[-1000:])
+            message = response.get("message") or process.stderr.strip() or "tracker wrapper failed"
+            raise TrackerWrapperError(str(message)[-1000:])
         return response
 
     def list_ready(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:
@@ -69,13 +69,13 @@ class TrackerJoint:
         if not isinstance(issues, list) or not all(
             isinstance(issue, str) and issue for issue in issues
         ):
-            raise JointError("work.list_ready must return a list of non-empty issue IDs")
+            raise TrackerWrapperError("work.list_ready must return a list of non-empty issue IDs")
         if len(issues) > limit:
-            raise JointError("work.list_ready returned more issues than requested")
+            raise TrackerWrapperError("work.list_ready returned more issues than requested")
         if len(set(issues)) != len(issues):
-            raise JointError("work.list_ready returned duplicate issue IDs")
+            raise TrackerWrapperError("work.list_ready returned duplicate issue IDs")
         if set(issues) & set(exclude):
-            raise JointError("work.list_ready returned an excluded issue ID")
+            raise TrackerWrapperError("work.list_ready returned an excluded issue ID")
         return issues
 
     def read(self, issue: str) -> dict[str, Any]:
@@ -83,9 +83,9 @@ class TrackerJoint:
         control_version = response.get("control_version")
         events = response.get("events")
         if not isinstance(control_version, str) or not isinstance(events, list):
-            raise JointError("issue.read_control must return control_version and events")
+            raise TrackerWrapperError("issue.read_control must return control_version and events")
         if not all(isinstance(item, dict) for item in events):
-            raise JointError("issue.read_control events must be objects")
+            raise TrackerWrapperError("issue.read_control events must be objects")
         return response
 
     def commit(
@@ -108,5 +108,5 @@ class TrackerJoint:
         )
         updated = response.get("control_version")
         if not isinstance(updated, str):
-            raise JointError("issue.commit_control must return control_version")
+            raise TrackerWrapperError("issue.commit_control must return control_version")
         return updated

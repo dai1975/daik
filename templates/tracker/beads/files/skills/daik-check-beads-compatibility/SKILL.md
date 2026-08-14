@@ -11,7 +11,7 @@ the user in `.agents/daik-tracker.md`.
 
 ## Procedure
 
-1. Confirm that `.agents/daik-config.yaml` selects `daik.tracker.beads`.
+1. Confirm that `.daik/config.yaml` selects `daik.tracker.beads`.
 2. Read `.daik/beads-spec.md`. This explicit user request authorizes reading
    that otherwise-internal file; do not inspect unrelated `.daik/` content.
 3. Read `.agents/daik-workflow.yaml` for its states and portable actions, and

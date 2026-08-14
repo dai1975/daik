@@ -46,11 +46,11 @@ class InitTests(unittest.TestCase):
         self.assertTrue((root / ".daik/AGENTS.md").is_file())
         self.assertEqual((root / ".daik/.ignore").read_text(encoding="utf-8"), "*\n")
         self.assertTrue((root / ".agents/daik-workflow.yaml").is_file())
-        self.assertTrue((root / ".agents/daik-config.yaml").is_file())
+        self.assertTrue((root / ".daik/config.yaml").is_file())
         self.assertTrue((root / ".agents/daik-tracker.md").is_file())
         self.assertTrue((root / ".agents/daik-worker.md").is_file())
         self.assertTrue((root / ".agents/daik-agent-context-spec.md").is_file())
-        self.assertTrue((root / ".agents/daik-tracker-joint-spec.md").is_file())
+        self.assertTrue((root / ".daik/tracker-wrapper-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-workflow-spec.md").is_file())
         self.assertTrue((root / ".agents/daik-issue-event-spec.md").is_file())
         self.assertTrue(
@@ -94,7 +94,9 @@ class InitTests(unittest.TestCase):
         self.assertIn("<<DAIK:SITE_GUIDE>>", agents)
         self.assertIn(".agents/daik-issue-event-spec.md", agents)
         self.assertIn(".agents/daik-worker.md", agents)
-        config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
+        self.assertNotIn(".daik/config.yaml", agents)
+        self.assertNotIn(".daik/tracker-wrapper-spec.md", agents)
+        config = (root / ".daik/config.yaml").read_text(encoding="utf-8")
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)
         self.assertIn("tracker:\n", config)
@@ -150,7 +152,7 @@ class InitTests(unittest.TestCase):
         )
 
         self.assertIn(f"Created site root: {root}", result.stdout)
-        self.assertTrue((root / ".agents/daik-config.yaml").is_file())
+        self.assertTrue((root / ".daik/config.yaml").is_file())
         self.assertTrue((root / ".daik/manifest.json").is_file())
         self.assertTrue((root / "workspaces").is_dir())
 
@@ -272,7 +274,7 @@ class InitTests(unittest.TestCase):
 
         self.run_daik(root, "site", "init", "--tracker", "beads", "--wet-run")
 
-        config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")
+        config = (root / ".daik/config.yaml").read_text(encoding="utf-8")
         tracker = (root / ".agents/daik-tracker.md").read_text(encoding="utf-8")
         self.assertIn("pack: daik.tracker.beads", config)
         self.assertNotIn("adapter:", config)

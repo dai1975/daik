@@ -51,7 +51,7 @@ the selected `transition`, target state in `to`, natural-language `reason`, and 
 `evidence` list. The runner emits a `handoff` event after a successful invocation.
 
 `agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
-Runner events are output records for the tracker joint to append; emitting an event
+Runner events are output records for the tracker wrapper to append; emitting an event
 does not itself persist it.
 
 ## Program-run data
@@ -68,7 +68,7 @@ and stderr are retained only in the external Invocation log directory.
 `workflow.awaiting_human` records `state` and `prompt`. `workflow.finished` records
 `state` and `outcome`.
 
-The tracker joint commits these events with an opaque compare-and-set control version.
+The tracker wrapper commits these events with an opaque compare-and-set control version.
 Only committed control events determine the current workflow state.
 
 ## Workspace data

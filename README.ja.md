@@ -163,7 +163,7 @@ helpは次のように表示できます。
 ./daik/daik work workspace --help
 ```
 
-workspaceを作る前に`.agents/daik-config.yaml`へsource repositoryを設定します。
+workspaceを作る前に`.daik/config.yaml`へsource repositoryを設定します。
 
 ```yaml
 repositories:
@@ -219,7 +219,7 @@ workflowのagent stateを一つだけ実行します。
 ```
 
 site rootでcommandを実行し、newline-delimitedの`agent.started`、
-`agent.completed`、`handoff` eventを出力します。tracker jointはこれらのevent全体を
+`agent.completed`、`handoff` eventを出力します。tracker wrapperはこれらのevent全体を
 Issueへ追記します。agentまたはprotocolの失敗時は`agent.failed`を出力します。
 InvocationとCLI wrapperの契約は`.agents/daik-agent-context-spec.md`を参照してください。
 Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
@@ -236,14 +236,14 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-brokerを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
-control operationを選択trackerへmappingし、`.agents/daik-tracker-joint-spec.md`の
+brokerを実行する前に、実行可能なtracker wrapperを設定します。wrapperはdaikの
+control operationを選択trackerへmappingし、`.daik/tracker-wrapper-spec.md`の
 stdio契約を実装します。
 
 ```yaml
 tracker:
-  joint:
-    - daik-joint-github-issues
+  wrapper:
+    - daik-tracker-wrapper-github-issues
 ```
 
 単一Issueをclaimして処理します。
@@ -328,16 +328,16 @@ my-site/
 ├── .agents/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
-│   ├── daik-config.yaml
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   ├── daik-agent-context-spec.md
-│   └── daik-tracker-joint-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
+│   ├── config.yaml
 │   ├── daik-AGENTS.md.template
+│   ├── tracker-wrapper-spec.md
 │   └── manifest.json
 └── workspaces/
 ```
@@ -413,11 +413,11 @@ eventを読んでから作業を継続します。
 | `.agents/daik-workflow.yaml` | Workflow | User | 作業手順を確認・編集する |
 | `.agents/daik-tracker.md` | Tracker guide | User | 操作mappingとplaceholderを確認・編集する |
 | `.agents/daik-worker.md` | Worker policy | User | workerの権限と責務を確認・編集する |
-| `.agents/daik-config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
+| `.daik/config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | 通常は参照のみ |
 | `.agents/daik-agent-context-spec.md` | Invocation・CLI wrapper contract | daik | 通常は参照のみ |
-| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | 通常は参照のみ |
+| `.daik/tracker-wrapper-spec.md` | Tracker wrapper contract | daik | 通常は参照のみ |
 | `.daik/manifest.json` | Operation record | daik | 開発時には使用しない |
 
 生成文書自身にも同じ区別を示します。Markdownはfront matterの`daik` mapping、
@@ -438,7 +438,7 @@ daikは[OpenAI Symphony](https://github.com/openai/symphony)の、Issue tracker�
 Issue tracker
       │
       ▼
-Tracker joint
+Tracker wrapper
       │ normalized Issue
       ▼
 Agent Work Broker
@@ -450,7 +450,7 @@ Agent Work Broker
               └── coding agent
 ```
 
-Symphonyが定義するscheduler、tracker joint、workspace manager、agent runnerの
+Symphonyが定義するscheduler、tracker wrapper、workspace manager、agent runnerの
 責務分離を参考にしつつ、daikでは個人のsiteに展開して直接編集できる設定と
 workflowを重視します。
 

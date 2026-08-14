@@ -175,7 +175,7 @@ Display help with:
 ./daik/daik work workspace --help
 ```
 
-Configure source repositories in `.agents/daik-config.yaml` before creating a
+Configure source repositories in `.daik/config.yaml` before creating a
 workspace:
 
 ```yaml
@@ -232,7 +232,7 @@ Run exactly one workflow agent state:
 ```
 
 The command runs from the site root and prints newline-delimited `agent.started`,
-`agent.completed`, and `handoff` events. A tracker joint must append these complete
+`agent.completed`, and `handoff` events. A tracker wrapper must append these complete
 events to the issue. Agent or protocol failure instead emits `agent.failed`. See
 `.agents/daik-agent-context-spec.md` for the Invocation and CLI wrapper contracts.
 Invocation records are stored outside the site under `DAIK_STATE_HOME`,
@@ -249,14 +249,14 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-Configure an executable tracker joint before running the broker. The joint maps
+Configure an executable tracker wrapper before running the broker. The wrapper maps
 daik control operations to the selected tracker and implements the stdio contract in
-`.agents/daik-tracker-joint-spec.md`:
+`.daik/tracker-wrapper-spec.md`:
 
 ```yaml
 tracker:
-  joint:
-    - daik-joint-github-issues
+  wrapper:
+    - daik-tracker-wrapper-github-issues
 ```
 
 Then claim and process one Issue:
@@ -345,16 +345,16 @@ my-site/
 ├── .agents/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
-│   ├── daik-config.yaml
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   ├── daik-agent-context-spec.md
-│   └── daik-tracker-joint-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
+│   ├── config.yaml
 │   ├── daik-AGENTS.md.template
+│   ├── tracker-wrapper-spec.md
 │   └── manifest.json
 └── workspaces/
 ```
@@ -431,11 +431,11 @@ do not destroy user changes.
 | `.agents/daik-workflow.yaml` | Workflow | User | Review and customize the process |
 | `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
 | `.agents/daik-worker.md` | Worker policy | User | Review worker permissions and responsibilities |
-| `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
+| `.daik/config.yaml` | Runtime config | User | Review tracker and execution settings |
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | Normally read-only |
 | `.agents/daik-agent-context-spec.md` | Invocation and CLI wrapper contract | daik | Normally read-only |
-| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | Normally read-only |
+| `.daik/tracker-wrapper-spec.md` | Tracker wrapper contract | daik | Normally read-only |
 | `.daik/manifest.json` | Operation record | daik | Not used during development |
 
 Generated documents also identify these roles themselves. Markdown files record
@@ -456,7 +456,7 @@ which monitors an issue tracker and runs coding agents in per-issue workspaces.
 Issue tracker
       │
       ▼
-Tracker joint
+Tracker wrapper
       │ normalized Issue
       ▼
 Agent Work Broker
@@ -468,7 +468,7 @@ Agent Work Broker
               └── coding agent
 ```
 
-It follows Symphony's separation of scheduler, tracker joint, workspace
+It follows Symphony's separation of scheduler, tracker wrapper, workspace
 manager, and agent runner responsibilities, while emphasizing configuration
 and workflows that are deployed into and directly editable within a personal
 site.
