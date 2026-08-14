@@ -367,7 +367,7 @@ This file describes the entire site and its permanent development rules.
 Instead, daik writes suggested additions to
 `.daik/daik-AGENTS.md.template`. Copy only the section enclosed by
 `DAIK:COPY:BEGIN` and `DAIK:COPY:END` into the existing `AGENTS.md`, then
-replace `<<DAIK:WORKSPACE_GUIDE>>` with site-specific guidance. Explanations of
+replace `<<DAIK:SITE_GUIDE>>` with site-specific guidance. Explanations of
 the template itself and instructions for the user remain outside the copy block.
 
 #### `.agents/daik-workflow.yaml`

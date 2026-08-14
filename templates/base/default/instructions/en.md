@@ -10,7 +10,7 @@ daik:
 
 Do not copy this entire file into `AGENTS.md`. Copy only the section enclosed by
 `DAIK:COPY:BEGIN` and `DAIK:COPY:END`, then replace
-`<<DAIK:WORKSPACE_GUIDE>>` with the actual guidance or a link to it.
+`<<DAIK:SITE_GUIDE>>` with the actual guidance or a link to it.
 
 ## Section to copy into AGENTS.md
 
@@ -33,18 +33,19 @@ read or modify it during normal issue investigation, implementation, testing,
 or review. Access it only when explicitly asked to set up, configure, or update
 daik itself.
 
-### Workspace guide
+### Site guide
 
-<<DAIK:WORKSPACE_GUIDE>>
+<<DAIK:SITE_GUIDE>>
 <!-- DAIK:COPY:END -->
 
 ## Guidance the user must provide
 
-Replace `<<DAIK:WORKSPACE_GUIDE>>` with this information or links to documents
+Replace `<<DAIK:SITE_GUIDE>>` with this information or links to documents
 that provide it:
 
-- repositories in the workspace and their roles
+- source repositories in the site and their roles
 - locations of reference material, generated files, and other resources
-- distinction between regular checkouts and checkouts under `workspaces/`
+- distinction between source checkouts in the site and generated Issue
+  checkouts under `workspaces/`
 - writable and read-only areas for agents
 - project-specific entry points for build, test, and review

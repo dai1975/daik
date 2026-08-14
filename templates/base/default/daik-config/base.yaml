@@ -19,12 +19,25 @@ workspace:
   # Worktrees are removed only by an explicit wet-run command.
   cleanup: manual
 
-# Source Git repositories available for issue workspaces. Add one mapping per
-# repository; paths are relative to the site root. Example:
+# Source Git repositories used to create per-Issue worktrees. `path` points to
+# an existing source checkout and is relative to the site root; do not point it
+# into `workspaces/`. The mapping key becomes the directory name inside each
+# generated Issue workspace. `base` is the source revision (usually a branch)
+# from which daik creates the Issue branch; it is not that generated branch.
+#
+# For a site containing `backend/`, `frontend/`, `resources/`, and `ref/`, only
+# the Git repositories that need writable Issue checkouts are listed:
 # repositories:
 #   backend:
 #     path: backend
 #     base: main
+#   frontend:
+#     path: frontend
+#     base: main
+#
+# This produces `workspaces/<issue>/backend/` and
+# `workspaces/<issue>/frontend/`. Non-repository resources remain at their
+# original site paths and should be described in AGENTS.md's Site guide.
 repositories:
 
 # Coding-agent concurrency, turn, and retry limits.

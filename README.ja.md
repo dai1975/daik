@@ -349,7 +349,7 @@ site全体の説明と恒久的な開発ルールを記述します。
 `AGENTS.md`は常にユーザー所有です。daikは作成、変更、上書きを行いません。
 代わりに、追加を推奨する内容を`.daik/daik-AGENTS.md.template`として用意します。
 template内の`DAIK:COPY:BEGIN`と`DAIK:COPY:END`で囲まれた部分だけを既存の
-`AGENTS.md`へコピーし、`<<DAIK:WORKSPACE_GUIDE>>`をsite固有の説明に
+`AGENTS.md`へコピーし、`<<DAIK:SITE_GUIDE>>`をsite固有の説明に
 置き換えます。template自身の説明とユーザーへの記述ガイドはコピー範囲の外に
 置かれます。
 

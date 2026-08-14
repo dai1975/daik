@@ -10,7 +10,7 @@ daik:
 
 このファイル全体を`AGENTS.md`へコピーしないでください。下の
 `DAIK:COPY:BEGIN`と`DAIK:COPY:END`で囲まれた部分だけをコピーし、
-`<<DAIK:WORKSPACE_GUIDE>>`を実際の説明または説明文書へのリンクに置き換えます。
+`<<DAIK:SITE_GUIDE>>`を実際の説明または説明文書へのリンクに置き換えます。
 
 ## AGENTS.mdへコピーする部分
 
@@ -32,18 +32,19 @@ Issueごとの書き込み可能なcheckoutは
 実装、テスト、レビューでは読み取り・変更しないでください。daik自体の導入、
 設定、更新を明示的に依頼された場合に限り参照できます。
 
-### Workspace guide
+### Site guide
 
-<<DAIK:WORKSPACE_GUIDE>>
+<<DAIK:SITE_GUIDE>>
 <!-- DAIK:COPY:END -->
 
 ## ユーザーが記述する内容
 
-`<<DAIK:WORKSPACE_GUIDE>>`には、次の情報を直接記述するか、それらを説明する
+`<<DAIK:SITE_GUIDE>>`には、次の情報を直接記述するか、それらを説明する
 文書へのリンクを記述してください。
 
-- workspaceに含まれるリポジトリとそれぞれの役割
+- siteに含まれるsource repositoryとそれぞれの役割
 - 参考資料、生成物、その他のリソースの場所
-- 通常のcheckoutと`workspaces/`以下のcheckoutの違い
+- site直下などに置かれたsource checkoutと、`workspaces/`以下に生成される
+  Issue用checkoutの違い
 - agentが編集してよい範囲と読み取り専用の範囲
 - プロジェクト固有のbuild、test、reviewの入口

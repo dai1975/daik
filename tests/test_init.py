@@ -91,7 +91,7 @@ class InitTests(unittest.TestCase):
         agents = (root / ".daik/daik-AGENTS.md.template").read_text(encoding="utf-8")
         self.assertIn("<!-- DAIK:COPY:BEGIN -->", agents)
         self.assertIn("<!-- DAIK:COPY:END -->", agents)
-        self.assertIn("<<DAIK:WORKSPACE_GUIDE>>", agents)
+        self.assertIn("<<DAIK:SITE_GUIDE>>", agents)
         self.assertIn(".agents/daik-issue-event-spec.md", agents)
         self.assertIn(".agents/daik-worker.md", agents)
         config = (root / ".agents/daik-config.yaml").read_text(encoding="utf-8")

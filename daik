@@ -23,7 +23,7 @@ from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.14.1"
+VERSION: Final = "0.14.2"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 PACK_FILE: Final = "pack.yaml"
 
@@ -613,7 +613,7 @@ def init_workspace(args: argparse.Namespace) -> int:
     else:
         print("Next: copy the tagged block from .daik/daik-AGENTS.md.template to AGENTS.md")
     if args.wet_run:
-        print("Next: replace <<DAIK:WORKSPACE_GUIDE>> in the copied AGENTS.md block")
+        print("Next: replace <<DAIK:SITE_GUIDE>> in the copied AGENTS.md block")
         print("Next: review .agents/daik-config.yaml")
         print("Next: review .agents/daik-workflow.yaml")
         print("Next: review .agents/daik-tracker.md and replace <<DAIK:TRACKER_TOOL>>")
