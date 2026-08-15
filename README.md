@@ -207,7 +207,7 @@ At a role boundary, generate a handoff event for the next agent:
   --to review \
   --phase review \
   --summary "Implementation and tests completed" \
-  --validation "pytest=passed" \
+  --validation "All pytest tests passed" \
   --next-action "Review retry boundaries"
 ```
 

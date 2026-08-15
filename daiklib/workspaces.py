@@ -275,12 +275,6 @@ def handoff_event(
     risks: Sequence[str],
     next_actions: Sequence[str],
 ) -> dict[str, Any]:
-    checks: list[dict[str, str]] = []
-    for value in validation:
-        if "=" not in value:
-            raise WorkspaceError("validation must use COMMAND=RESULT form")
-        command, result = value.split("=", 1)
-        checks.append({"command": command, "result": result})
     return event(
         "handoff",
         issue,
@@ -290,7 +284,7 @@ def handoff_event(
             "phase": phase,
             "summary": summary,
             "commits": list(commits),
-            "validation": checks,
+            "validation": list(validation),
             "decisions": list(decisions),
             "risks": list(risks),
             "next_actions": list(next_actions),

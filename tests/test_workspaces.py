@@ -117,7 +117,7 @@ class WorkspaceTests(unittest.TestCase):
             "--commit",
             "abc1234",
             "--validation",
-            "pytest=passed",
+            "All pytest tests passed",
             "--risk",
             "Windows is untested",
             "--next-action",
@@ -126,4 +126,4 @@ class WorkspaceTests(unittest.TestCase):
         value = json.loads(result.stdout)
         self.assertEqual(value["kind"], "handoff")
         self.assertEqual(value["data"]["to_role"], "review")
-        self.assertEqual(value["data"]["validation"][0]["result"], "passed")
+        self.assertEqual(value["data"]["validation"], ["All pytest tests passed"])

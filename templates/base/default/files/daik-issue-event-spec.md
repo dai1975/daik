@@ -80,6 +80,7 @@ must not be posted to the tracker.
 ## Handoff data
 
 A handoff records `from_role`, `to_role`, `phase`, `summary`, `commits`,
-`validation`, `decisions`, `risks`, and `next_actions`. Empty lists are retained
-so the receiving agent can distinguish an intentionally empty section from an
-older unstructured comment.
+`validation`, `decisions`, `risks`, and `next_actions`. `validation` is a list of
+concise evidence strings; it may contain commands and results or natural-language
+observations. Empty lists are retained so the receiving agent can distinguish an
+intentionally empty section from an older unstructured comment.

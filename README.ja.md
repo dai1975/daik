@@ -194,7 +194,7 @@ roleの境界では次のagent向けhandoff eventを生成します。
   --to review \
   --phase review \
   --summary "Implementation and tests completed" \
-  --validation "pytest=passed" \
+  --validation "pytestは全件成功" \
   --next-action "Review retry boundaries"
 ```
 

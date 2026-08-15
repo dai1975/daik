@@ -155,7 +155,8 @@ print(json.dumps({
     "native_artifacts": [],
     "agent_result": {
         "transition": transition, "reason": "done", "evidence": ["verified"],
-        "summary": "state completed", "commits": [], "validation": [],
+        "summary": "state completed", "commits": [],
+        "validation": ["Validation completed without failures"],
         "decisions": [], "risks": [], "next_actions": []
     }
 }))

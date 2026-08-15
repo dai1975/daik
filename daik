@@ -23,7 +23,7 @@ from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.16.0"
+VERSION: Final = "0.16.1"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 BUILTIN_GITHUB_WRAPPER: Final = (
     Path(__file__).resolve().parent
@@ -1860,7 +1860,7 @@ def build_parser() -> argparse.ArgumentParser:
     handoff_create_parser.add_argument("--summary", required=True)
     handoff_create_parser.add_argument("--commit", action="append", default=[])
     handoff_create_parser.add_argument(
-        "--validation", action="append", default=[], metavar="COMMAND=RESULT"
+        "--validation", action="append", default=[], metavar="EVIDENCE"
     )
     handoff_create_parser.add_argument("--decision", action="append", default=[])
     handoff_create_parser.add_argument("--risk", action="append", default=[])

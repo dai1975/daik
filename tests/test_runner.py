@@ -74,7 +74,7 @@ print(json.dumps({
         "evidence": ["adapter completed"],
         "summary": "implementation completed",
         "commits": ["abc123"],
-        "validation": ["tests=passed"],
+        "validation": ["All relevant tests passed locally"],
         "decisions": [],
         "risks": [],
         "next_actions": ["run independent tests"],
@@ -120,6 +120,9 @@ runpy.run_path("adapter.py", run_name="__main__")
         self.assertEqual(events[1]["data"]["transition"], "ready_for_testing")
         self.assertEqual(events[1]["data"]["to"], "testing")
         self.assertEqual(events[2]["data"]["to_role"], "testing")
+        self.assertEqual(
+            events[2]["data"]["validation"], ["All relevant tests passed locally"]
+        )
         invocation = json.loads(
             (self.root / "received-invocation.json").read_text(encoding="utf-8")
         )
