@@ -21,6 +21,8 @@ the user in `.agents/daik-tracker.md`.
 4. Determine the GitHub product and API version exposed by that access method.
    If unavailable, record it as `UNKNOWN`; do not substitute a local `gh`
    executable unless the tracker instructions select it.
+   When `.daik/config.yaml` selects the built-in `github-gh` wrapper, verify that
+   GitHub CLI is version 2.94.0 or newer.
 5. Verify each required data field, repository feature, and permission from the
    compatibility spec. Prefer capability, repository configuration, label,
    dependency, and existing-issue reads.

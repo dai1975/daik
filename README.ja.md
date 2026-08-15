@@ -151,7 +151,9 @@ manifestとの整合性、daik所有ファイルの完全性を検査します�
 ```
 
 validateに加えて、Git、Issue用workspace外のcheckout、設定されたworkspace
-directoryへの書き込みを確認します。tracker accessにはskill、MCP server、CLI、
+directoryへの書き込みを確認します。組み込みGitHub wrapperでは、ready判定に使う
+Issue dependency fieldを提供するGitHub CLI 2.94.0以降であることも確認します。
+tracker accessにはskill、MCP server、CLI、
 その他の方法を使えるため、tracker互換性については選択packのread-onlyな
 互換性確認skillを案内します。
 

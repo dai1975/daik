@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -23,13 +24,14 @@ from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.16.1"
+VERSION: Final = "0.16.2"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
 BUILTIN_GITHUB_WRAPPER: Final = (
     Path(__file__).resolve().parent
     / "tracker-wrappers/github/daik-tracker-wrapper-github-gh"
 )
 PACK_FILE: Final = "pack.yaml"
+GITHUB_GH_MIN_VERSION: Final = (2, 94, 0)
 
 
 class DaikError(Exception):
@@ -1247,6 +1249,11 @@ def command_result(command: list[str], timeout: int = 10) -> subprocess.Complete
         return None
 
 
+def parse_gh_version(output: str) -> tuple[int, int, int] | None:
+    match = re.search(r"(?:^|\n)gh version (\d+)\.(\d+)\.(\d+)\b", output)
+    return tuple(map(int, match.groups())) if match else None
+
+
 def discover_git_checkouts(root: Path, workspace_root: Path | None) -> list[Path]:
     """Find checkout markers without reading repository contents."""
     found: list[Path] = []
@@ -1352,14 +1359,37 @@ def doctor_site(args: argparse.Namespace) -> int:
         tracker_settings.get("wrapper") if isinstance(tracker_settings, dict) else None
     )
     if tracker_wrapper == "github-gh":
-        if shutil.which("gh") is None:
+        gh = shutil.which("gh")
+        if gh is None:
             diagnostics.append(
                 Diagnostic("ERROR", "tracker", "gh executable was not found on PATH")
             )
         else:
-            diagnostics.append(
-                Diagnostic("INFO", "tracker", "built-in GitHub gh tracker wrapper is configured")
-            )
+            version_result = command_result([gh, "--version"])
+            version = parse_gh_version(version_result.stdout) if version_result else None
+            minimum = ".".join(map(str, GITHUB_GH_MIN_VERSION))
+            if version is None or version_result is None or version_result.returncode != 0:
+                diagnostics.append(
+                    Diagnostic("ERROR", "tracker", "could not determine the gh version")
+                )
+            elif version < GITHUB_GH_MIN_VERSION:
+                actual = ".".join(map(str, version))
+                diagnostics.append(
+                    Diagnostic(
+                        "ERROR",
+                        "tracker",
+                        f"github-gh requires gh >= {minimum} for Issue dependencies; found {actual}",
+                    )
+                )
+            else:
+                actual = ".".join(map(str, version))
+                diagnostics.append(
+                    Diagnostic(
+                        "INFO",
+                        "tracker",
+                        f"built-in GitHub gh tracker wrapper is configured (gh {actual})",
+                    )
+                )
     elif not isinstance(tracker_wrapper, list) or not tracker_wrapper:
         diagnostics.append(
             Diagnostic(

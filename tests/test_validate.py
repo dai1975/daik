@@ -256,6 +256,42 @@ class ValidateTests(unittest.TestCase):
         self.assertIn("ERROR git: executable was not found on PATH", result.stdout)
         self.assertIn("Doctor failed:", result.stdout)
 
+    def test_doctor_rejects_gh_without_issue_dependency_support(self) -> None:
+        self.complete_user_setup()
+        binary_directory = self.root / "bin"
+        binary_directory.mkdir()
+        gh = binary_directory / "gh"
+        gh.write_text("#!/bin/sh\necho 'gh version 2.93.0 (test)'\n", encoding="utf-8")
+        gh.chmod(0o755)
+        environment = dict(os.environ)
+        environment["PATH"] = str(binary_directory) + os.pathsep + environment["PATH"]
+
+        result = self.run_daik(
+            "site", "doctor", expected_returncode=1, environment=environment
+        )
+
+        self.assertIn(
+            "ERROR tracker: github-gh requires gh >= 2.94.0 for Issue dependencies; found 2.93.0",
+            result.stdout,
+        )
+
+    def test_doctor_accepts_minimum_github_gh_version(self) -> None:
+        self.complete_user_setup()
+        binary_directory = self.root / "bin"
+        binary_directory.mkdir()
+        gh = binary_directory / "gh"
+        gh.write_text("#!/bin/sh\necho 'gh version 2.94.0 (test)'\n", encoding="utf-8")
+        gh.chmod(0o755)
+        environment = dict(os.environ)
+        environment["PATH"] = str(binary_directory) + os.pathsep + environment["PATH"]
+
+        result = self.run_daik("site", "doctor", environment=environment)
+
+        self.assertIn(
+            "INFO tracker: built-in GitHub gh tracker wrapper is configured (gh 2.94.0)",
+            result.stdout,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

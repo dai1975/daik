@@ -163,7 +163,9 @@ For broader environment diagnostics, run:
 
 In addition to validation, doctor checks Git, discovers checkouts outside the
 per-issue workspace area, and verifies that the configured workspace directory
-is writable. For tracker compatibility it points to the selected pack's
+is writable. For the built-in GitHub wrapper it also requires GitHub CLI 2.94.0
+or newer, which provides the Issue dependency fields used by ready selection.
+For broader tracker compatibility it points to the selected pack's
 read-only compatibility skill, because tracker access may use a skill, MCP
 server, CLI, or another method.
 
