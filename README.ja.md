@@ -236,15 +236,17 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-brokerを実行する前に、実行可能なtracker wrapperを設定します。wrapperはdaikの
-control operationを選択trackerへmappingし、`.daik/tracker-wrapper-spec.md`の
-stdio契約を実装します。
+GitHub Issues packは組み込みの`github-gh` tracker wrapperを有効にします。
+認証済みの`gh` accountを使い、`repositories`に設定した各source checkoutから
+GitHub repositoryを解決します。
 
 ```yaml
 tracker:
-  wrapper:
-    - daik-tracker-wrapper-github-issues
+  wrapper: github-gh
 ```
+
+brokerを起動する前に`gh auth status`を実行してください。custom tracker wrapperは
+`.daik/tracker-wrapper-spec.md`を実装するargv listとして設定できます。
 
 単一Issueをclaimして処理します。
 

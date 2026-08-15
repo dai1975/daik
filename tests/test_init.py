@@ -100,6 +100,7 @@ class InitTests(unittest.TestCase):
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)
         self.assertIn("tracker:\n", config)
+        self.assertIn("wrapper: github-gh", config)
         self.assertNotIn("adapter:", config)
         self.assertNotIn("command: gh", config)
         self.assertTrue((root / ".daik/github-issues-spec.md").is_file())

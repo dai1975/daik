@@ -249,15 +249,17 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-Configure an executable tracker wrapper before running the broker. The wrapper maps
-daik control operations to the selected tracker and implements the stdio contract in
-`.daik/tracker-wrapper-spec.md`:
+The GitHub Issues pack enables the built-in `github-gh` tracker wrapper. It uses the
+authenticated `gh` account and resolves the GitHub repository from each source
+checkout configured under `repositories`:
 
 ```yaml
 tracker:
-  wrapper:
-    - daik-tracker-wrapper-github-issues
+  wrapper: github-gh
 ```
+
+Run `gh auth status` before starting the broker. Custom tracker wrappers can instead
+be configured as an argv list implementing `.daik/tracker-wrapper-spec.md`.
 
 Then claim and process one Issue:
 

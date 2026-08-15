@@ -60,8 +60,7 @@ class BrokerTests(unittest.TestCase):
                 f"    - {json.dumps(str(self.agent_wrapper))}\n",
             )
             .replace(
-                "  wrapper_timeout_seconds: 30\n",
-                "  wrapper_timeout_seconds: 30\n"
+                "  wrapper: github-gh\n",
                 "  wrapper:\n"
                 f"    - {json.dumps(sys.executable)}\n"
                 f"    - {json.dumps(str(self.tracker_wrapper))}\n",

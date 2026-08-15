@@ -23,8 +23,12 @@ from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
 
 
-VERSION: Final = "0.15.0"
+VERSION: Final = "0.16.0"
 BUILTIN_TEMPLATES: Final = Path(__file__).resolve().parent / "templates"
+BUILTIN_GITHUB_WRAPPER: Final = (
+    Path(__file__).resolve().parent
+    / "tracker-wrappers/github/daik-tracker-wrapper-github-gh"
+)
 PACK_FILE: Final = "pack.yaml"
 
 
@@ -1126,13 +1130,19 @@ class SiteValidator:
             self.report("ERROR", relative, "tracker.pack must be a string")
         else:
             wrapper = tracker.get("wrapper")
-            if wrapper is not None and (
+            if wrapper is not None and wrapper != "github-gh" and (
                 not isinstance(wrapper, list)
                 or not wrapper
                 or not all(isinstance(item, str) and item for item in wrapper)
             ):
                 self.report(
-                    "ERROR", relative, "tracker.wrapper must be a non-empty list of command arguments"
+                    "ERROR",
+                    relative,
+                    "tracker.wrapper must be 'github-gh' or a non-empty argv list",
+                )
+            if wrapper == "github-gh" and tracker.get("pack") != "daik.tracker.github-issues":
+                self.report(
+                    "ERROR", relative, "tracker.wrapper 'github-gh' requires the GitHub Issues pack"
                 )
             if not positive_integer(tracker.get("wrapper_timeout_seconds", 30)):
                 self.report(
@@ -1341,7 +1351,16 @@ def doctor_site(args: argparse.Namespace) -> int:
     tracker_wrapper = (
         tracker_settings.get("wrapper") if isinstance(tracker_settings, dict) else None
     )
-    if not isinstance(tracker_wrapper, list) or not tracker_wrapper:
+    if tracker_wrapper == "github-gh":
+        if shutil.which("gh") is None:
+            diagnostics.append(
+                Diagnostic("ERROR", "tracker", "gh executable was not found on PATH")
+            )
+        else:
+            diagnostics.append(
+                Diagnostic("INFO", "tracker", "built-in GitHub gh tracker wrapper is configured")
+            )
+    elif not isinstance(tracker_wrapper, list) or not tracker_wrapper:
         diagnostics.append(
             Diagnostic(
                 "WARNING",
@@ -1408,6 +1427,29 @@ def load_site_config(root: Path) -> dict[str, Any]:
     if not path.is_file():
         raise DaikError(f"required configuration is missing: {path}")
     return parse_yaml_subset(path)
+
+
+def tracker_wrapper_command(root: Path, config: dict[str, Any]) -> tuple[list[str], int]:
+    tracker = config.get("tracker")
+    wrapper = tracker.get("wrapper") if isinstance(tracker, dict) else None
+    timeout = tracker.get("wrapper_timeout_seconds", 30) if isinstance(tracker, dict) else 30
+    if wrapper == "github-gh":
+        command = [sys.executable, str(BUILTIN_GITHUB_WRAPPER)]
+        repositories = config.get("repositories")
+        if isinstance(repositories, dict):
+            for key, settings in repositories.items():
+                path = settings.get("path") if isinstance(settings, dict) else None
+                if isinstance(key, str) and isinstance(path, str):
+                    command.extend(("--repository-path", f"{key}={root / path}"))
+        required_labels = tracker.get("required_labels", []) if isinstance(tracker, dict) else []
+        if isinstance(required_labels, list):
+            for label in required_labels:
+                if isinstance(label, str):
+                    command.extend(("--required-label", label))
+        return command, timeout
+    if isinstance(wrapper, list) and wrapper:
+        return wrapper, timeout
+    raise DaikError("tracker.wrapper must configure a tracker wrapper")
 
 
 def workspace_manager(args: argparse.Namespace) -> WorkspaceManager:
@@ -1536,11 +1578,7 @@ def work_run(args: argparse.Namespace) -> int:
             "site validation failed before broker execution: "
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
-    tracker = config.get("tracker")
-    wrapper_command = tracker.get("wrapper") if isinstance(tracker, dict) else None
-    if not isinstance(wrapper_command, list) or not wrapper_command:
-        raise DaikError("tracker.wrapper must configure a tracker wrapper command")
-    wrapper_timeout = tracker.get("wrapper_timeout_seconds", 30)
+    wrapper_command, wrapper_timeout = tracker_wrapper_command(root, config)
     wrapper = TrackerWrapper(root, wrapper_command, wrapper_timeout)
     try:
         run_log = BrokerRunLog(root, "run", 1)
@@ -1591,11 +1629,8 @@ def work_watch(args: argparse.Namespace) -> int:
             "site validation failed before broker watch: "
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
-    tracker = config.get("tracker")
-    wrapper_command = tracker.get("wrapper") if isinstance(tracker, dict) else None
-    if not isinstance(wrapper_command, list) or not wrapper_command:
-        raise DaikError("tracker.wrapper must configure a tracker wrapper command")
-    wrapper = TrackerWrapper(root, wrapper_command, tracker.get("wrapper_timeout_seconds", 30))
+    wrapper_command, wrapper_timeout = tracker_wrapper_command(root, config)
+    wrapper = TrackerWrapper(root, wrapper_command, wrapper_timeout)
     agent = config["agent"]
     polling = config["polling"]
 

@@ -65,3 +65,16 @@ the other three reasons. Preserve the human summary in a close comment.
 
 Do not infer compatibility from API version alone. Do not mutate a live
 repository merely to perform a check.
+
+## Built-in `gh` wrapper
+
+The `github-gh` tracker wrapper uses the authenticated GitHub CLI account. It
+resolves every configured source checkout with `gh repo view`, selects work with
+`gh issue list`, and stores control events in append-only Issue comments. Dynamic
+`daik:*` labels are created when first needed.
+
+The wrapper checks the event-derived control version immediately before writing and
+rejects an Issue assigned to a different actor. GitHub does not provide one atomic
+compare-and-set operation spanning comments, labels, assignees, and Issue state, so
+only one broker using the same GitHub account should control a site at a time. Event
+comments remain authoritative if a later mirror update fails.
