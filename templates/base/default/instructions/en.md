@@ -47,3 +47,18 @@ that provide it:
   checkouts under `workspaces/`
 - writable and read-only areas for agents
 - project-specific entry points for build, test, and review
+
+ex:
+
+```
+### Workspace guide
+
+Per-issue checkouts are created under `workspaces/` according to the
+`repositories` configuration in `.agents/daik-config.yaml`.
+
+- `daik`: The daik codebase. This is the target for implementation and testing.
+- `.agents/`: Site configuration and workflow instructions. Treat this directory
+  as read-only during normal Issue work.
+
+Limit all edits to the assigned checkout within the Issue workspace.
+```

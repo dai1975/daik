@@ -47,3 +47,16 @@ Issueごとの書き込み可能なcheckoutは
   Issue用checkoutの違い
 - agentが編集してよい範囲と読み取り専用の範囲
 - プロジェクト固有のbuild、test、reviewの入口
+
+例:
+
+```
+Issue ごとの checkout は `.agents/daik-config.yaml` の `repositories`
+に従って `workspaces/` 以下へ作成される。
+
+- `daik`: daik 本体。実装・テスト対象
+- `.agents/`: site 設定と作業規約。通常の Issue 作業では読み取り専用
+
+編集は、割り当てられた Issue workspace 内の checkout に限定する。
+
+```
