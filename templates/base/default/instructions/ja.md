@@ -51,8 +51,7 @@ Issueごとの書き込み可能なcheckoutは
 例:
 
 ```
-Issue ごとの checkout は `.agents/daik-config.yaml` の `repositories`
-に従って `workspaces/` 以下へ作成される。
+Issue ごとの checkout は site 設定に従って `workspaces/` 以下へ作成される。
 
 - `daik`: daik 本体。実装・テスト対象
 - `.agents/`: site 設定と作業規約。通常の Issue 作業では読み取り専用

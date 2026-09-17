@@ -94,6 +94,8 @@ class InitTests(unittest.TestCase):
         self.assertIn("<<DAIK:SITE_GUIDE>>", agents)
         self.assertIn(".agents/daik-issue-event-spec.md", agents)
         self.assertIn(".agents/daik-worker.md", agents)
+        self.assertNotIn(".agents/daik-config.yaml", agents)
+        self.assertNotIn(".agents/daik-tracker-joint-spec.md", agents)
         self.assertNotIn(".daik/config.yaml", agents)
         self.assertNotIn(".daik/tracker-wrapper-spec.md", agents)
         config = (root / ".daik/config.yaml").read_text(encoding="utf-8")
@@ -247,6 +249,10 @@ class InitTests(unittest.TestCase):
         self.assertIn("Implement the smallest change", workflow)
         self.assertIn("## GitHub Issues tracker mapping", tracker)
         self.assertIn("## Issue-driven development", agents)
+        self.assertNotIn(".agents/daik-config.yaml", agents)
+        self.assertNotIn(".agents/daik-tracker-joint-spec.md", agents)
+        self.assertNotIn(".daik/config.yaml", agents)
+        self.assertNotIn(".daik/tracker-wrapper-spec.md", agents)
 
     def test_reinit_with_different_selection_is_rejected(self) -> None:
         root = self.make_workspace()
