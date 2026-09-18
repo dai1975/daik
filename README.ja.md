@@ -136,6 +136,10 @@ daik work status
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
 
+既存siteでは、`site init --wet-run`を再実行してdaik所有のtemplateを再生成し、
+tagged blockを改めてcopy、調整してください。ユーザー所有のルート`AGENTS.md`は
+このcommandでは上書きされません。
+
 ```sh
 ./daik/daik site validate
 ```

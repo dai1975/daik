@@ -146,6 +146,10 @@ daik work status
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
 
+For an existing site, rerun `site init --wet-run` to regenerate the daik-owned
+template, then copy and customize its tagged block again. The command does not
+overwrite the user-owned root `AGENTS.md`.
+
 ```sh
 ./daik/daik site validate
 ```

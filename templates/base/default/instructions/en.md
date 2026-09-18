@@ -53,8 +53,8 @@ ex:
 ```
 ### Workspace guide
 
-Per-issue checkouts are created under `workspaces/` according to the
-`repositories` configuration in `.agents/daik-config.yaml`.
+Per-issue checkouts are created under `workspaces/` according to the site
+configuration.
 
 - `daik`: The daik codebase. This is the target for implementation and testing.
 - `.agents/`: Site configuration and workflow instructions. Treat this directory
