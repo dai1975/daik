@@ -48,11 +48,20 @@ agent:
   max_retry_backoff_ms: 300000
   # Maximum wall time for one workflow state invocation.
   timeout_seconds: 3600
+  #
   # Enable the built-in Codex CLI wrapper before using `daik work agent run`:
-  # cli_wrapper: codex
   # Product-specific options are passed only to that wrapper:
+  #
+  # cli_wrapper: codex
   # wrapper_options:
   #   sandbox: workspace-write
+  #   arguments:
+  #     - -c
+  #     - sandbox_workspace_write.network_access=true
+  #     - -c
+  #     - features.network_proxy.enabled=true
+  #     - -c
+  #     - 'features.network_proxy.domains={ "api.github.com" = "allow" }'
   #
   # A third-party CLI wrapper can instead be configured as argv. It reads a
   # daik.agent-invocation.v1 JSON object from stdin and writes one
