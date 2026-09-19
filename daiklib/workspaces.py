@@ -1,4 +1,4 @@
-"""Git worktree management with issue-tracker event output."""
+"""Independent Git clone management with issue-tracker event output."""
 
 from __future__ import annotations
 
@@ -7,10 +7,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from typing import Any, Sequence
+from urllib.parse import urlsplit, urlunsplit
 
-from daiklib.processes import ProcessConfigError, broker_environment, redact
+from daiklib.processes import ProcessConfigError, broker_environment, redact, redact_value
 
 
 class WorkspaceError(RuntimeError):
@@ -20,19 +22,86 @@ class WorkspaceError(RuntimeError):
 def run_git(
     arguments: Sequence[str], repository: Path, environment: dict[str, str] | None = None,
     secrets: tuple[str, ...] = (),
+    *, redact_stdout: bool = True, input_text: str | None = None,
 ) -> str:
+    # `GH_TOKEN` is consumed by gh, not Git.  Configure Git to ask gh for
+    # github.com HTTPS credentials without putting the token in argv, a URL,
+    # or the clone's persistent config.
+    command = ["git"]
+    if environment and environment.get("GH_TOKEN"):
+        command.extend(
+            (
+                "-c", "credential.https://github.com.helper=",
+                "-c", "credential.https://github.com.helper=!gh auth git-credential",
+            )
+        )
+    command.extend(("-C", str(repository), *arguments))
     result = subprocess.run(
-        ["git", "-C", str(repository), *arguments],
+        command,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
         env=environment,
+        input=input_text,
     )
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "git command failed"
+        detail = re.sub(
+            r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]+",
+            lambda match: _safe_diagnostic_url(match.group(0), secrets),
+            detail,
+        )
         raise WorkspaceError(redact(detail, secrets))
-    return redact(result.stdout.strip(), secrets)
+    stdout = result.stdout.strip()
+    return redact(stdout, secrets) if redact_stdout else stdout
+
+
+def canonical_remote_url(value: str, secrets: tuple[str, ...] = ()) -> str:
+    """Return a credential-free remote identity safe to persist and report."""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as error:
+        raise WorkspaceError("source remote URL is invalid") from error
+    if not parsed.scheme or not parsed.netloc:
+        # SCP-style SSH and local paths do not have URL userinfo or query
+        # parameters. Keep them byte-for-byte so repository identity is not
+        # accidentally changed.
+        canonical = value
+        if any(secret in canonical for secret in secrets):
+            raise WorkspaceError("source remote URL contains configured authentication material")
+        return canonical
+
+    scheme = parsed.scheme.lower()
+    hostname = parsed.hostname or ""
+    if parsed.password is not None:
+        if scheme not in {"http", "https"}:
+            raise WorkspaceError(
+                "source remote URL contains credentials that cannot be safely canonicalized"
+            )
+        username = None
+    elif parsed.username is not None and scheme in {"http", "https"}:
+        # A lone HTTPS username is commonly a personal access token.
+        username = None
+    else:
+        username = parsed.username
+
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    host = hostname if port is None else f"{hostname}:{port}"
+    netloc = host if username is None else f"{username}@{host}"
+    canonical = urlunsplit((scheme, netloc, parsed.path, "", ""))
+    if any(secret in canonical for secret in secrets):
+        raise WorkspaceError("source remote URL contains configured authentication material")
+    return canonical
+
+
+def _safe_diagnostic_url(value: str, secrets: tuple[str, ...] = ()) -> str:
+    try:
+        return canonical_remote_url(value, secrets)
+    except WorkspaceError:
+        return "[REDACTED URL]"
 
 
 def safe_slug(value: str) -> str:
@@ -43,14 +112,16 @@ def safe_slug(value: str) -> str:
     return f"{slug}-{digest}"
 
 
-def event(kind: str, issue: str, data: dict[str, Any]) -> dict[str, Any]:
-    return {
+def event(
+    kind: str, issue: str, data: dict[str, Any], secrets: tuple[str, ...] = ()
+) -> dict[str, Any]:
+    return redact_value({
         "schema": "daik.issue-event.v1",
         "kind": kind,
         "issue": issue,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "data": data,
-    }
+    }, secrets)
 
 
 class WorkspaceManager:
@@ -67,6 +138,11 @@ class WorkspaceManager:
         if not isinstance(root_name, str) or not root_name:
             raise WorkspaceError("workspace.root must be a non-empty string")
         self.workspace_root = self._site_path(root_name)
+        strategy = workspace.get("strategy")
+        if strategy != "clone":
+            raise WorkspaceError(
+                "workspace.strategy must currently be 'clone'; add `strategy: clone` under `workspace`"
+            )
         prefix = workspace.get("branch_prefix", "daik")
         if not isinstance(prefix, str) or not prefix or "/" in prefix:
             raise WorkspaceError("workspace.branch_prefix must be a non-empty path component")
@@ -78,6 +154,11 @@ class WorkspaceManager:
 
     def _git(self, arguments: Sequence[str], repository: Path) -> str:
         return run_git(arguments, repository, self.environment, self.secrets)
+
+    def _git_raw(self, arguments: Sequence[str], repository: Path) -> str:
+        return run_git(
+            arguments, repository, self.environment, self.secrets, redact_stdout=False
+        )
 
     def _site_path(self, relative_name: str) -> Path:
         relative = Path(relative_name)
@@ -118,55 +199,133 @@ class WorkspaceManager:
             result.append((name, source, base))
         return result
 
-    def _record(self, name: str, source: Path, worktree: Path, base_revision: str) -> dict[str, str]:
-        branch = self._git(("branch", "--show-current"), worktree)
-        head = self._git(("rev-parse", "HEAD"), worktree)
+    def _remote(self, source: Path) -> tuple[str, str]:
+        remotes = self._git(("remote",), source).splitlines()
+        if len(remotes) != 1:
+            raise WorkspaceError(
+                f"source repository {source.relative_to(self.site)} must have exactly one remote; "
+                f"found {len(remotes)}"
+            )
+        name = remotes[0]
+        fetch_url = self._git_raw(("remote", "get-url", name), source)
+        push_url = self._git_raw(("remote", "get-url", "--push", name), source)
+        canonical_fetch = canonical_remote_url(fetch_url, self.secrets)
+        canonical_push = canonical_remote_url(push_url, self.secrets)
+        if canonical_fetch != canonical_push:
+            raise WorkspaceError(
+                f"source repository {source.relative_to(self.site)} remote {name!r} has "
+                "different fetch and push URLs"
+            )
+        return name, canonical_fetch
+
+    def _require_workspace_containment(self, workspace: Path, repository: Path) -> None:
+        workspace_root = self.workspace_root.resolve()
+        resolved_workspace = workspace.resolve()
+        resolved_repository = repository.resolve()
+        try:
+            resolved_workspace.relative_to(workspace_root)
+            resolved_repository.relative_to(resolved_workspace)
+        except ValueError as error:
+            raise WorkspaceError(
+                f"repository clone escapes its Issue workspace: {repository}"
+            ) from error
+        if resolved_workspace != workspace.absolute() or resolved_repository != repository.absolute():
+            raise WorkspaceError(
+                f"repository clone path must not use symlinks: {repository}"
+            )
+
+    def _require_independent_clone(self, workspace: Path, repository: Path) -> None:
+        self._require_workspace_containment(workspace, repository)
+        if not repository.is_dir():
+            raise WorkspaceError(f"repository clone is missing: {repository}")
+        git_directory = repository / ".git"
+        if not git_directory.is_dir() or git_directory.is_symlink():
+            raise WorkspaceError(
+                f"existing repository has no independent .git directory: {repository}"
+            )
+        objects_directory = git_directory / "objects"
+        if not objects_directory.is_dir() or objects_directory.is_symlink():
+            raise WorkspaceError(
+                f"existing repository has no independent Git object directory: {repository}"
+            )
+        if (objects_directory / "info" / "alternates").exists():
+            raise WorkspaceError(
+                f"existing repository uses Git object alternates: {repository}"
+            )
+
+    def _record(self, name: str, source: Path, repository: Path, base_revision: str) -> dict[str, str]:
+        branch = self._git(("branch", "--show-current"), repository)
+        head = self._git(("rev-parse", "HEAD"), repository)
+        remote_name, remote_url = self._remote(repository)
         return {
             "name": name,
             "source": source.relative_to(self.site).as_posix(),
-            "worktree": worktree.relative_to(self.site).as_posix(),
+            "path": repository.relative_to(self.site).as_posix(),
             "branch": branch,
             "head": head,
             "base_revision": base_revision,
+            "remote": remote_name,
+            "remote_url": redact(remote_url, self.secrets),
         }
 
     def create(self, issue: str, selected: Sequence[str]) -> dict[str, Any]:
         workspace_id = self.workspace_id(issue)
         workspace = self.workspace_root / workspace_id
         repositories = self.selected_repositories(selected)
-        preflight: list[tuple[str, Path, str, str, Path, bool]] = []
+        preflight: list[tuple[str, Path, str, str, Path, str, str]] = []
         any_created = False
         for name, source, base in repositories:
             branch = f"{self.branch_prefix}/{workspace_id}"
             target = workspace / name
+            self._require_workspace_containment(workspace, target)
             base_revision = self._git(("rev-parse", base), source)
+            remote_name, remote_url = self._remote(source)
             if target.exists():
-                if not target.is_dir():
-                    raise WorkspaceError(f"worktree target is not a directory: {target}")
+                self._require_independent_clone(workspace, target)
                 actual_branch = self._git(("branch", "--show-current"), target)
                 if actual_branch != branch:
                     raise WorkspaceError(
-                        f"existing worktree {target} uses {actual_branch!r}, expected {branch!r}"
+                        f"existing repository {target} uses {actual_branch!r}, expected {branch!r}"
                     )
-                preflight.append((name, source, branch, base_revision, target, False))
+                actual_remote = self._remote(target)
+                if actual_remote != (remote_name, remote_url):
+                    raise WorkspaceError(
+                        f"existing repository {target} remote is {actual_remote!r}, "
+                        f"expected {(remote_name, remote_url)!r}"
+                    )
+                ancestor = subprocess.run(
+                    ["git", "-C", str(target), "merge-base", "--is-ancestor", base_revision, "HEAD"],
+                    check=False, env=self.environment,
+                )
+                if ancestor.returncode != 0:
+                    raise WorkspaceError(f"existing repository {target} is not based on {base_revision}")
+                preflight.append(
+                    (name, source, branch, base_revision, target, remote_name, remote_url)
+                )
                 continue
-            branch_exists = subprocess.run(
-                ["git", "-C", str(source), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-                check=False,
-                env=self.environment,
-            ).returncode == 0
-            preflight.append((name, source, branch, base_revision, target, not branch_exists))
+            preflight.append(
+                (name, source, branch, base_revision, target, remote_name, remote_url)
+            )
 
         records: list[dict[str, str]] = []
-        for name, source, branch, base_revision, target, create_branch in preflight:
+        for name, source, branch, base_revision, target, remote_name, remote_url in preflight:
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                arguments = ["worktree", "add"]
-                if create_branch:
-                    arguments.extend(("-b", branch, str(target), base_revision))
-                else:
-                    arguments.extend((str(target), branch))
-                self._git(arguments, source)
+                temporary_remote = "daik-source"
+                self._git(
+                    (
+                        "clone",
+                        "--no-hardlinks",
+                        "--origin",
+                        temporary_remote,
+                        str(source),
+                        str(target),
+                    ),
+                    source,
+                )
+                self._git(("checkout", "-b", branch, base_revision), target)
+                self._git(("remote", "remove", temporary_remote), target)
+                self._git(("remote", "add", remote_name, remote_url), target)
                 any_created = True
             records.append(self._record(name, source, target, base_revision))
         return event(
@@ -177,6 +336,7 @@ class WorkspaceManager:
                 "path": workspace.relative_to(self.site).as_posix(),
                 "repositories": records,
             },
+            self.secrets,
         )
 
     def inspect(self, issue: str, selected: Sequence[str] = ()) -> dict[str, Any]:
@@ -185,8 +345,7 @@ class WorkspaceManager:
         records: list[dict[str, str]] = []
         for name, source, base in self.selected_repositories(selected):
             target = workspace / name
-            if not target.is_dir():
-                raise WorkspaceError(f"worktree is missing: {target.relative_to(self.site)}")
+            self._require_independent_clone(workspace, target)
             records.append(self._record(name, source, target, self._git(("rev-parse", base), source)))
         return event(
             "workspace.inspected",
@@ -196,6 +355,7 @@ class WorkspaceManager:
                 "path": workspace.relative_to(self.site).as_posix(),
                 "repositories": records,
             },
+            self.secrets,
         )
 
     def list(self) -> list[dict[str, Any]]:
@@ -228,7 +388,7 @@ class WorkspaceManager:
             if recorded is None:
                 differences.append(f"{item['name']}: missing from recorded event")
                 continue
-            for key in ("source", "worktree", "branch"):
+            for key in ("source", "path", "branch", "base_revision", "remote", "remote_url"):
                 if recorded.get(key) != item[key]:
                     differences.append(
                         f"{item['name']}.{key}: recorded {recorded.get(key)!r}, actual {item[key]!r}"
@@ -247,6 +407,7 @@ class WorkspaceManager:
                 "differences": differences,
                 "observations": observations,
             },
+            self.secrets,
         )
         return result, not differences
 
@@ -258,22 +419,24 @@ class WorkspaceManager:
             target = workspace / name
             if not target.exists():
                 continue
+            self._require_independent_clone(workspace, target)
             branch = self._git(("branch", "--show-current"), target)
             removed.append(
                 {
                     "name": name,
-                    "worktree": target.relative_to(self.site).as_posix(),
+                    "path": target.relative_to(self.site).as_posix(),
                     "branch": branch,
                 }
             )
             if wet_run:
-                self._git(("worktree", "remove", str(target)), source)
+                shutil.rmtree(target)
         if wet_run and workspace.is_dir() and not any(workspace.iterdir()):
             workspace.rmdir()
         return event(
             "workspace.removed" if wet_run else "workspace.remove-preview",
             issue,
-            {"workspace_id": workspace_id, "repositories": removed, "branches_retained": True},
+            {"workspace_id": workspace_id, "repositories": removed},
+            self.secrets,
         )
 
 

@@ -43,6 +43,11 @@ class BrokerTests(unittest.TestCase):
         (self.repo / "README.md").write_text("test\n", encoding="utf-8")
         subprocess.run(["git", "add", "README.md"], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=self.repo, check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://example.invalid/backend.git"],
+            cwd=self.repo,
+            check=True,
+        )
         self.make_tracker_wrapper()
         self.make_agent_wrapper()
         config = self.root / ".daik/config.yaml"
