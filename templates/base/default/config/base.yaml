@@ -19,26 +19,6 @@ workspace:
   # Worktrees are removed only by an explicit wet-run command.
   cleanup: manual
 
-# subprocess inheritance of environment variables
-processes:
-  broker:
-    type: broker
-    env:
-      GH_TOKEN:
-        from_env: FOOPROJ_GH_TOKEN
-        required: true
-  agent:
-    type: agent
-    roles:
-      - implementer
-      - tester
-      - ewviewer
-    env:
-      GH_TOKEN:
-        from_env: FOOPROJ_GH_TOKEN
-        required: true
-
-
 # Source Git repositories used to create per-Issue worktrees. `path` points to
 # an existing source checkout and is relative to the site root; do not point it
 # into `workspaces/`. The mapping key becomes the directory name inside each
