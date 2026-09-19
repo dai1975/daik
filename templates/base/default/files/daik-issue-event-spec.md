@@ -26,11 +26,11 @@ Tracker packs define the provider-specific container used for the event.
 
 ## Event kinds
 
-- `workspace.prepared`: worktrees were created
-- `workspace.reused`: existing worktrees were verified and reused
+- `workspace.prepared`: repository clones were created
+- `workspace.reused`: existing repository clones were verified and reused
 - `workspace.inspected`: local workspace state was read
 - `workspace.reconciled`: local state matched a previously recorded event
-- `workspace.removed`: worktrees were removed; branches were retained
+- `workspace.removed`: repository clones were removed
 - `handoff`: one agent role handed work to another
 - `workflow.started`: the Issue was claimed and entered its initial state
 - `workflow.transitioned`: an allowed transition was atomically applied
@@ -74,7 +74,7 @@ Only committed control events determine the current workflow state.
 ## Workspace data
 
 Workspace paths are site-relative. Each repository entry records `name`,
-`source`, `worktree`, `branch`, `head`, and `base_revision`. Absolute local paths
+`source`, `path`, `branch`, `head`, `base_revision`, `remote`, and `remote_url`. Absolute local paths
 must not be posted to the tracker.
 
 ## Handoff data

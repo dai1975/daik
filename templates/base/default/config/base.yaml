@@ -14,12 +14,14 @@ daik_document:
 # Parent directory for per-issue workspaces, relative to the site root.
 workspace:
   root: workspaces
-  # Prefix used for issue worktree branches.
+  # Repository materialization strategy. Only independent clones are supported.
+  strategy: clone
+  # Prefix used for issue branches.
   branch_prefix: daik
-  # Worktrees are removed only by an explicit wet-run command.
+  # Clones are removed only by an explicit wet-run command.
   cleanup: manual
 
-# Source Git repositories used to create per-Issue worktrees. `path` points to
+# Source Git repositories used to create per-Issue clones. `path` points to
 # an existing source checkout and is relative to the site root; do not point it
 # into `workspaces/`. The mapping key becomes the directory name inside each
 # generated Issue workspace. `base` is the source revision (usually a branch)
@@ -29,10 +31,10 @@ workspace:
 # the Git repositories that need writable Issue checkouts are listed:
 # repositories:
 #   backend:
-#     path: worktree-base/backend
+#     path: source-checkouts/backend
 #     base: main
 #   frontend:
-#     path: worktree-base/frontend
+#     path: source-checkouts/frontend
 #     base: main
 #
 # This produces `workspaces/<issue>/backend/` and

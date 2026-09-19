@@ -126,7 +126,7 @@ daik work status
 - `site init`: 展開内容をpreviewする。`--wet-run`指定時だけ実際に書き込む
 - `site validate`: 外部サービスへ接続せず、site内の契約を検証する
 - `site doctor`: 契約を検証し、local toolと実行環境を診断する
-- `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
+- `work workspace`: Issueごとの独立Git cloneを作成・確認・照合・削除する
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
 - `work run`: claimした単一Issueをbrokerで停止またはfinal stateまで進行する
@@ -182,6 +182,11 @@ helpは次のように表示できます。
 workspaceを作る前に`.daik/config.yaml`へsource repositoryを設定します。
 
 ```yaml
+workspace:
+  root: workspaces
+  strategy: clone
+  branch_prefix: daik
+  cleanup: manual
 repositories:
   backend:
     path: backend
@@ -191,7 +196,10 @@ repositories:
     base: main
 ```
 
-設定されたrepositoryごとにworktreeを作成または再利用します。
+設定されたrepositoryごとに独立cloneを作成または再利用します。sourceにはfetch URLと
+push URLが同一のremoteがちょうど一つ必要です。daikはlocal sourceを
+`--no-hardlinks`でcloneするため未push commitもbaseにでき、Issue branchを`base`から
+作成した後、clone時のlocal remoteをsource本来のremote URLへ置き換えます。
 
 ```sh
 ./daik/daik work workspace create github:backend#123
@@ -214,8 +222,8 @@ roleの境界では次のagent向けhandoff eventを生成します。
   --next-action "Review retry boundaries"
 ```
 
-`workspace remove`はdefaultでpreviewだけを行い、worktreeの削除には`--wet-run`が
-必要です。Issue branchは削除しません。
+`workspace remove`はdefaultでpreviewだけを行い、cloneの削除には`--wet-run`が
+必要です。source repositoryと別Issue workspaceは変更しません。
 
 組み込みCodex CLI wrapperを有効にします。共通daik Invocationを非対話の
 `codex exec`へ変換し、Codex固有の動作をrunnerから分離します。
@@ -409,8 +417,8 @@ workspaces/
 └── GH-124/
 ```
 
-各Issue workspaceの内部構造はdaikが固定しません。単一のGit worktreeだけを
-作ることも、複数リポジトリのworktreeを並べることもできます。agentのcurrent
+各Issue workspaceには、設定されたrepositoryごとの独立Git cloneを配置します。
+Git metadataとobjectもIssue workspace内に収まります。agentのcurrent
 working directoryはsiteのルートですが、実際の変更は割り当てられた
 `workspaces/<issue>/`内のcheckoutに対して行います。
 

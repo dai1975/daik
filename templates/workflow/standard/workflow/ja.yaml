@@ -34,7 +34,7 @@ states:
     agent: implementer
     max_visits: 3
     task: |
-      Issue、最新のworkspace event、handoff eventを読み、割り当てられたworktreeで
+      Issue、最新のworkspace event、handoff eventを読み、割り当てられたcheckoutで
       要求された変更とtestを実装する。
     transitions:
       ready_for_testing:

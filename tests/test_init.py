@@ -101,6 +101,7 @@ class InitTests(unittest.TestCase):
         config = (root / ".daik/config.yaml").read_text(encoding="utf-8")
         self.assertIn("artifact: config", config)
         self.assertIn("workspace:\n  root: workspaces", config)
+        self.assertIn("  strategy: clone", config)
         self.assertIn("tracker:\n", config)
         self.assertIn("wrapper: github-gh", config)
         self.assertNotIn("adapter:", config)

@@ -136,7 +136,7 @@ daik work status
 - `site init`: preview deployment; write files only when `--wet-run` is supplied
 - `site validate`: validate the local site contract without accessing external services
 - `site doctor`: validate the contract and diagnose local tools and runtime readiness
-- `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
+- `work workspace`: create, inspect, reconcile, and remove per-issue Git clones
 - `work handoff create`: emit a structured event for the next agent role
 - `work agent run`: invoke one agent state and emit transition and handoff events
 - `work run`: run the broker for one claimed Issue until it stops or reaches a final state
@@ -196,6 +196,11 @@ Configure source repositories in `.daik/config.yaml` before creating a
 workspace:
 
 ```yaml
+workspace:
+  root: workspaces
+  strategy: clone
+  branch_prefix: daik
+  cleanup: manual
 repositories:
   backend:
     path: backend
@@ -205,7 +210,11 @@ repositories:
     base: main
 ```
 
-Create or reuse one worktree per configured repository:
+Create or reuse one independent clone per configured repository. The source must
+have exactly one remote, with identical fetch and push URLs. daik clones the local
+source with `--no-hardlinks` (so local-only commits remain usable), creates the Issue
+branch at `base`, and replaces the clone's temporary local remote with that original
+remote URL.
 
 ```sh
 ./daik/daik work workspace create github:backend#123
@@ -228,8 +237,8 @@ At a role boundary, generate a handoff event for the next agent:
   --next-action "Review retry boundaries"
 ```
 
-`workspace remove` previews by default and requires `--wet-run` to remove
-worktrees. It never deletes issue branches.
+`workspace remove` previews by default and requires `--wet-run` to remove clones.
+It does not modify the source repository or other Issue workspaces.
 
 Enable the built-in Codex CLI wrapper. It translates the common daik Invocation to
 non-interactive `codex exec` without putting Codex-specific behavior in the runner:
@@ -290,7 +299,7 @@ declared edge with `--transition NAME`.
 
 A workflow can run deterministic validation without an LLM by using a `program`
 state. The command is an argv sequence and runs directly in the named repository's
-Issue worktree:
+Issue repository clone:
 
 ```yaml
 testing:
@@ -428,8 +437,8 @@ workspaces/
 └── GH-124/
 ```
 
-daik does not fix the internal layout of an issue workspace. It may contain one
-Git worktree or worktrees from multiple repositories. The agent's current
+An issue workspace contains one independent Git clone per configured repository.
+The clone's Git metadata and objects are inside that Issue workspace. The agent's current
 working directory remains the site root, while actual changes are made in the
 assigned checkout under `workspaces/<issue>/`.
 
