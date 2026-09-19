@@ -23,6 +23,7 @@ class ProgramRunnerTests(unittest.TestCase):
         self.config = {
             "workspace": {"root": "workspaces"},
             "repositories": {"backend": {"path": "backend", "base": "main"}},
+            "processes": {"broker": {"type": "broker"}},
         }
 
     def run_program(self, code: str, executable: str | None = None):
@@ -73,6 +74,21 @@ class ProgramRunnerTests(unittest.TestCase):
         self.assertEqual(emitted[1]["data"]["to"], "await_human")
         self.assertIsNone(emitted[1]["data"]["exit_code"])
         self.assertIn("could not", emitted[1]["data"]["summary"])
+
+    def test_secret_output_is_redacted_from_log_and_event(self) -> None:
+        self.config["processes"]["broker"]["env"] = {
+            "TOKEN": {"from_env": "PROGRAM_TEST_SECRET", "required": True}
+        }
+        with patch.dict(os.environ, {"PROGRAM_TEST_SECRET": "program-secret-marker"}):
+            result, emitted = self.run_program(
+                "import os; print(os.environ['TOKEN']); "
+                "raise SystemExit(3)"
+            )
+
+        log = (result.log_directory / "program.stdout.log").read_text()
+        self.assertNotIn("program-secret-marker", log)
+        self.assertIn("[REDACTED]", log)
+        self.assertNotIn("program-secret-marker", str(emitted))
 
 
 if __name__ == "__main__":

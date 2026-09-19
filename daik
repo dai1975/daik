@@ -22,6 +22,7 @@ from daiklib.broker import Broker, BrokerError
 from daiklib.broker_runs import BrokerRunError, BrokerRunLog, broker_run_status
 from daiklib.watch import WatchError, WorkWatcher
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, dump_event, handoff_event
+from daiklib.processes import ProcessConfigError, broker_environment
 
 
 VERSION: Final = "0.16.2"
@@ -348,7 +349,7 @@ def read_static_files(packs: list[Pack]) -> dict[str, tuple[str, str]]:
     return files
 
 
-def read_site_config(packs: list[Pack]) -> str:
+def read_site_config(packs: list[Pack], language: str) -> str:
     fragments: list[str] = []
     for pack in packs:
         source_name = pack.data.get("site_config")
@@ -360,6 +361,41 @@ def read_site_config(packs: list[Pack]) -> str:
             fragments.append(content)
     if not fragments:
         raise DaikError("selected packs do not provide daik configuration")
+    workflow_pack = next(pack for pack in packs if pack.kind == "workflow")
+    workflow_source = localized_file(
+        workflow_pack,
+        mapping(workflow_pack.data, "contributions", workflow_pack.path).get("workflow"),
+        language,
+        "contributions.workflow",
+    )
+    workflow = parse_yaml_subset(workflow_source)
+    profiles = workflow.get("agents", {})
+    roles = sorted(
+        {
+            profile["role"]
+            for profile in profiles.values()
+            if isinstance(profile, dict) and isinstance(profile.get("role"), str)
+        }
+    ) if isinstance(profiles, dict) else []
+    github = any(pack.id == "daik.tracker.github-issues" for pack in packs)
+    env_lines = (
+        ["    env:", "      GH_TOKEN:", "        from_env: DAIK_GH_TOKEN", "        required: true"]
+        if github else []
+    )
+    process_lines = [
+        "# Explicit child-process domains. Only baseline OS variables and these mappings",
+        "# are exposed; parent credential names are not inherited automatically.",
+        "processes:",
+        "  broker:",
+        "    type: broker",
+        *env_lines,
+        "  agent:",
+        "    type: agent",
+        "    roles:",
+        *(f"      - {role}" for role in roles),
+        *env_lines,
+    ]
+    fragments.append("\n".join(process_lines))
     return "\n\n".join(fragments) + "\n"
 
 
@@ -404,7 +440,7 @@ def safe_workspace_target(root: Path, relative_name: str) -> Path:
 
 def build_templates(selected: list[Pack], language: str) -> dict[str, tuple[str, str]]:
     templates = read_static_files(selected)
-    templates[".daik/config.yaml"] = ("user", read_site_config(selected))
+    templates[".daik/config.yaml"] = ("user", read_site_config(selected, language))
     agents_parts = read_contributions(selected, "agents", language)
     workflow_parts = read_contributions(selected, "workflow", language)
     tracker_parts = read_contributions(selected, "tracker", language)
@@ -959,6 +995,7 @@ class SiteValidator:
 
         if config is not None:
             self.validate_config(config)
+            self.validate_processes(config, workflow_document)
             repositories = config.get("repositories")
             states = workflow_document.get("states") if workflow_document else None
             if isinstance(repositories, dict) and isinstance(states, dict):
@@ -1166,6 +1203,97 @@ class SiteValidator:
                     "ERROR",
                     relative,
                     "tracker execution must be configured with tracker.wrapper",
+                )
+
+    def validate_processes(
+        self, config: dict[str, Any], workflow: dict[str, Any] | None
+    ) -> None:
+        relative = ".daik/config.yaml"
+        processes = config.get("processes")
+        if not isinstance(processes, dict) or not processes:
+            self.report(
+                "ERROR",
+                relative,
+                "processes must be a non-empty mapping; migrate this site by configuring "
+                "one broker process and complete workflow role assignments",
+            )
+            return
+        broker_names: list[str] = []
+        assignments: dict[str, list[str]] = {}
+        for name, process in processes.items():
+            prefix = f"processes.{name}"
+            if not isinstance(name, str) or not name or not isinstance(process, dict):
+                self.report("ERROR", relative, "each process must be a named mapping")
+                continue
+            process_type = process.get("type")
+            if process_type not in {"broker", "agent"}:
+                self.report("ERROR", relative, f"{prefix}.type must be broker or agent")
+            if process_type == "broker":
+                broker_names.append(name)
+                if "roles" in process:
+                    self.report("ERROR", relative, f"{prefix}.roles is not allowed for broker")
+            if process_type == "agent":
+                roles = process.get("roles")
+                if (
+                    not isinstance(roles, list)
+                    or not roles
+                    or not all(isinstance(role, str) and role for role in roles)
+                ):
+                    self.report("ERROR", relative, f"{prefix}.roles must be a non-empty list of strings")
+                else:
+                    for role in roles:
+                        assignments.setdefault(role, []).append(name)
+            entries = process.get("env", {})
+            if not isinstance(entries, dict):
+                self.report("ERROR", relative, f"{prefix}.env must be a mapping")
+                continue
+            for child_name, entry in entries.items():
+                item = f"{prefix}.env.{child_name}"
+                if not isinstance(child_name, str) or not child_name or not isinstance(entry, dict):
+                    self.report("ERROR", relative, f"{item} must be a named mapping")
+                    continue
+                has_from = "from_env" in entry
+                has_value = "value" in entry
+                if has_from == has_value:
+                    self.report("ERROR", relative, f"{item} must define exactly one of from_env or value")
+                if has_from and (
+                    not isinstance(entry.get("from_env"), str) or not entry["from_env"]
+                ):
+                    self.report("ERROR", relative, f"{item}.from_env must be a non-empty string")
+                if has_value and not isinstance(entry.get("value"), str):
+                    self.report("ERROR", relative, f"{item}.value must be a string")
+                if "required" in entry and not isinstance(entry["required"], bool):
+                    self.report("ERROR", relative, f"{item}.required must be a boolean")
+                if entry.get("required") is True and not has_from:
+                    self.report("ERROR", relative, f"{item}.required is only valid with from_env")
+                unknown = set(entry) - {"from_env", "value", "required"}
+                if unknown:
+                    self.report("ERROR", relative, f"{item} contains unknown keys: {', '.join(sorted(unknown))}")
+        if len(broker_names) != 1:
+            self.report("ERROR", relative, "exactly one process with type broker is required")
+
+        profiles = workflow.get("agents") if isinstance(workflow, dict) else None
+        known_roles = {
+            profile["role"]
+            for profile in (profiles.values() if isinstance(profiles, dict) else [])
+            if isinstance(profile, dict) and isinstance(profile.get("role"), str)
+        }
+        for role in sorted(set(assignments) - known_roles):
+            owners = assignments[role]
+            self.report(
+                "ERROR", relative,
+                f'processes.{owners[0]}.roles contains unknown workflow role "{role}"; '
+                f"known roles: {', '.join(sorted(known_roles))}",
+            )
+        for role in sorted(known_roles):
+            owners = assignments.get(role, [])
+            if not owners:
+                self.report("ERROR", relative, f'workflow role "{role}" is not assigned to any agent process')
+            elif len(owners) > 1:
+                paths = ", ".join(f"processes.{name}" for name in sorted(owners))
+                self.report(
+                    "ERROR", relative,
+                    f'workflow role "{role}" is assigned to multiple processes: {paths}',
                 )
 
     def validate_manifest(
@@ -1609,7 +1737,13 @@ def work_run(args: argparse.Namespace) -> int:
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
     wrapper_command, wrapper_timeout = tracker_wrapper_command(root, config)
-    wrapper = TrackerWrapper(root, wrapper_command, wrapper_timeout)
+    try:
+        _, tracker_environment, tracker_secrets = broker_environment(config)
+    except ProcessConfigError as error:
+        raise DaikError(str(error)) from error
+    wrapper = TrackerWrapper(
+        root, wrapper_command, wrapper_timeout, tracker_environment, tracker_secrets
+    )
     try:
         run_log = BrokerRunLog(root, "run", 1)
         run_log.record("run.started", mode="run", issue=args.issue, concurrency=1)
@@ -1660,7 +1794,13 @@ def work_watch(args: argparse.Namespace) -> int:
             + "; ".join(f"{item.path}: {item.message}" for item in errors)
         )
     wrapper_command, wrapper_timeout = tracker_wrapper_command(root, config)
-    wrapper = TrackerWrapper(root, wrapper_command, wrapper_timeout)
+    try:
+        _, tracker_environment, tracker_secrets = broker_environment(config)
+    except ProcessConfigError as error:
+        raise DaikError(str(error)) from error
+    wrapper = TrackerWrapper(
+        root, wrapper_command, wrapper_timeout, tracker_environment, tracker_secrets
+    )
     agent = config["agent"]
     polling = config["polling"]
 

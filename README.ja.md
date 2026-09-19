@@ -161,6 +161,16 @@ tracker accessにはskill、MCP server、CLI、
 その他の方法を使えるため、tracker互換性については選択packのread-onlyな
 互換性確認skillを案内します。
 
+### process実行環境
+
+`.daik/config.yaml`のtop-level `processes`で、brokerとworkflowの全roleを
+それぞれちょうど一つのprocessへ割り当てます。childへ渡すのは`PATH`、`HOME`、
+locale、temporary directoryなどの最小baselineと、そのprocess自身の`env` mapping
+だけです。`from_env`は親環境変数を別名で公開し、`value`は非secretな固定値を指定し、
+`required: true`は対象processの起動直前に未設定・空を検出します。元の変数名や別の
+process設定は暗黙に継承・mergeしません。既存siteは一つの`type: broker`と、重複も
+不足もない`type: agent`のrole割り当てを追加してください。
+
 helpは次のように表示できます。
 
 ```sh

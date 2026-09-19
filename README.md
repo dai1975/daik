@@ -173,6 +173,17 @@ For broader tracker compatibility it points to the selected pack's
 read-only compatibility skill, because tracker access may use a skill, MCP
 server, CLI, or another method.
 
+### Process environments
+
+`.daik/config.yaml` assigns the broker and every workflow role to exactly one
+top-level `processes` entry. A process receives a small baseline environment
+(`PATH`, `HOME`, locale, and temporary-directory variables) plus only its own
+`env` mappings. Use `from_env` to alias a parent variable or `value` for a
+non-secret literal; `required: true` fails immediately before that process is
+started. Parent variable names and settings from other processes are not
+implicitly inherited or merged. Existing sites must add one `type: broker`
+entry and complete, non-overlapping `type: agent` role assignments.
+
 Display help with:
 
 ```sh

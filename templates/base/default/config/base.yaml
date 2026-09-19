@@ -19,6 +19,26 @@ workspace:
   # Worktrees are removed only by an explicit wet-run command.
   cleanup: manual
 
+# subprocess inheritance of environment variables
+processes:
+  broker:
+    type: broker
+    env:
+      GH_TOKEN:
+        from_env: FOOPROJ_GH_TOKEN
+        required: true
+  agent:
+    type: agent
+    roles:
+      - implementer
+      - tester
+      - ewviewer
+    env:
+      GH_TOKEN:
+        from_env: FOOPROJ_GH_TOKEN
+        required: true
+
+
 # Source Git repositories used to create per-Issue worktrees. `path` points to
 # an existing source checkout and is relative to the site root; do not point it
 # into `workspaces/`. The mapping key becomes the directory name inside each
@@ -38,12 +58,7 @@ workspace:
 # This produces `workspaces/<issue>/backend/` and
 # `workspaces/<issue>/frontend/`. Non-repository resources remain at their
 # original site paths and should be described in AGENTS.md's Site guide.
-<<DAIK:EDIT>>
 repositories:
-  backend:
-    path: worktree-base/backend
-    base: main
-<</DAIK:EDIT>>
 
 # Coding-agent concurrency, turn, and retry limits.
 agent:
@@ -64,11 +79,6 @@ agent:
   # daik.cli-wrapper-result.v1 JSON object to stdout:
   # command:
   #   - daik-cli-wrapper-example
-  <<DAIK:EDIT>>
-  cli_wrapper: codex
-  or
-  command:
-  <</DAIK:EDIT>>
 
 # How frequently the broker checks for eligible issues, in milliseconds.
 polling:

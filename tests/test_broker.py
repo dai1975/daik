@@ -73,6 +73,7 @@ class BrokerTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment["DAIK_STATE_HOME"] = str(self.root / "daik-state")
+        environment["DAIK_GH_TOKEN"] = "test-token"
         result = subprocess.run(
             [sys.executable, str(DAIK), *arguments],
             cwd=self.root,

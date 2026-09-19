@@ -83,6 +83,46 @@ class ValidateTests(unittest.TestCase):
 
         self.assertIn("agent.max_concurrent_agents must be a positive integer", result.stdout)
 
+    def test_process_roles_must_exactly_cover_workflow_roles(self) -> None:
+        self.complete_user_setup()
+        config = self.root / ".daik/config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8")
+            .replace("      - review\n", "")
+            .replace("      - testing\n", "      - testing\n      - reviewer\n"),
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            'workflow role "review" is not assigned to any agent process', result.stdout
+        )
+        self.assertIn(
+            'contains unknown workflow role "reviewer"; known roles: implementation, review, testing',
+            result.stdout,
+        )
+
+    def test_process_role_duplicate_names_all_owners(self) -> None:
+        self.complete_user_setup()
+        config = self.root / ".daik/config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8")
+            + "\n  test-agent:\n"
+            + "    type: agent\n"
+            + "    roles:\n"
+            + "      - testing\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            'workflow role "testing" is assigned to multiple processes: '
+            "processes.agent, processes.test-agent",
+            result.stdout,
+        )
+
     def test_tracker_must_provide_every_workflow_action(self) -> None:
         self.complete_user_setup()
         tracker = self.root / ".agents/daik-tracker.md"
