@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
+
+from daiklib.processes import redact, redact_value
 
 
 class TrackerWrapperError(RuntimeError):
@@ -17,10 +19,19 @@ class ControlConflict(TrackerWrapperError):
 
 
 class TrackerWrapper:
-    def __init__(self, site: Path, command: Sequence[str], timeout_seconds: int = 30):
+    def __init__(
+        self,
+        site: Path,
+        command: Sequence[str],
+        timeout_seconds: int = 30,
+        environment: Mapping[str, str] | None = None,
+        secrets: tuple[str, ...] = (),
+    ):
         self.site = site
         self.command = list(command)
         self.timeout = timeout_seconds
+        self.environment = dict(environment) if environment is not None else None
+        self.secrets = secrets
 
     def call(
         self, operation: str, issue: str | None = None, **arguments: Any
@@ -42,25 +53,31 @@ class TrackerWrapper:
                 stderr=subprocess.PIPE,
                 timeout=self.timeout,
                 check=False,
+                env=self.environment,
             )
         except subprocess.TimeoutExpired as error:
             raise TrackerWrapperError(f"tracker wrapper timed out after {self.timeout} seconds") from error
         except OSError as error:
             raise TrackerWrapperError(f"could not start tracker wrapper: {error}") from error
         try:
-            response = json.loads(process.stdout)
+            response = redact_value(json.loads(process.stdout), self.secrets)
         except json.JSONDecodeError as error:
-            detail = process.stderr.strip() or process.stdout.strip()
+            detail = redact(process.stderr.strip() or process.stdout.strip(), self.secrets)
             raise TrackerWrapperError(f"tracker wrapper returned invalid JSON: {detail[-1000:]}") from error
         if not isinstance(response, dict):
             raise TrackerWrapperError("tracker wrapper response root must be an object")
         if response.get("protocol_version") != "daik.tracker-wrapper-result.v1":
             raise TrackerWrapperError("tracker wrapper returned an unsupported protocol_version")
         if response.get("status") == "conflict":
-            raise ControlConflict(response.get("message", "tracker control version conflict"))
+            raise ControlConflict(
+                redact(
+                    str(response.get("message", "tracker control version conflict")),
+                    self.secrets,
+                )
+            )
         if process.returncode or response.get("status") != "ok":
             message = response.get("message") or process.stderr.strip() or "tracker wrapper failed"
-            raise TrackerWrapperError(str(message)[-1000:])
+            raise TrackerWrapperError(redact(str(message), self.secrets)[-1000:])
         return response
 
     def list_ready(self, limit: int, exclude: Sequence[str] = ()) -> list[str]:

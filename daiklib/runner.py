@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from daiklib.invocations import (
     write_private_json,
     write_private_text,
 )
+from daiklib.processes import ProcessConfigError, agent_environment, redact, redact_value
 from daiklib.workspaces import event, handoff_event, safe_slug
 
 
@@ -51,6 +51,7 @@ def _strings(value: Any, field: str) -> list[str]:
 class AgentRunner:
     def __init__(self, site: Path, config: dict[str, Any], workflow: dict[str, Any]):
         self.site = site.resolve()
+        self.config = config
         self.workflow = workflow
         repositories = config.get("repositories", {})
         self.repositories = repositories if isinstance(repositories, dict) else {}
@@ -203,16 +204,20 @@ class AgentRunner:
             record(failed)
             raise AgentExecutionError(message, started, failed)
 
-        environment = dict(os.environ)
-        environment.update(
-            {
+        try:
+            process_name, environment, secrets = agent_environment(
+                self.config,
+                profile["role"],
+                {
                 "DAIK_ISSUE": issue,
                 "DAIK_STATE": state_name,
                 "DAIK_AGENT_PROFILE": profile_name,
                 "DAIK_INVOCATION_ID": invocation_id,
                 "DAIK_LOG_DIRECTORY": str(log_directory),
-            }
-        )
+                },
+            )
+        except ProcessConfigError as error:
+            fail(str(error))
         process: subprocess.CompletedProcess[str] | None = None
         try:
             process = subprocess.run(
@@ -229,8 +234,8 @@ class AgentRunner:
         except subprocess.TimeoutExpired as error:
             stdout = error.stdout if isinstance(error.stdout, str) else ""
             stderr = error.stderr if isinstance(error.stderr, str) else ""
-            write_private_text(log_directory / "wrapper.stdout.log", stdout)
-            write_private_text(log_directory / "wrapper.stderr.log", stderr)
+            write_private_text(log_directory / "wrapper.stdout.log", redact(stdout, secrets))
+            write_private_text(log_directory / "wrapper.stderr.log", redact(stderr, secrets))
             write_private_json(
                 log_directory / "metadata.json",
                 {
@@ -239,6 +244,7 @@ class AgentRunner:
                     "finished_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "status": "timed_out",
                     "wrapper_executable": self.command[0],
+                    "process": process_name,
                 },
             )
             fail(f"agent command timed out after {self.timeout} seconds")
@@ -251,11 +257,16 @@ class AgentRunner:
                     "finished_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "status": "start_failed",
                     "wrapper_executable": self.command[0],
+                    "process": process_name,
                 },
             )
             fail(f"could not start agent command: {error}")
-        write_private_text(log_directory / "wrapper.stdout.log", process.stdout)
-        write_private_text(log_directory / "wrapper.stderr.log", process.stderr)
+        write_private_text(
+            log_directory / "wrapper.stdout.log", redact(process.stdout, secrets)
+        )
+        write_private_text(
+            log_directory / "wrapper.stderr.log", redact(process.stderr, secrets)
+        )
         write_private_json(
             log_directory / "metadata.json",
             {
@@ -265,13 +276,17 @@ class AgentRunner:
                 "status": "completed" if process.returncode == 0 else "failed",
                 "exit_code": process.returncode,
                 "wrapper_executable": self.command[0],
+                "process": process_name,
             },
         )
         if process.returncode:
-            detail = process.stderr.strip() or process.stdout.strip() or "no diagnostic output"
+            detail = redact(
+                process.stderr.strip() or process.stdout.strip() or "no diagnostic output",
+                secrets,
+            )
             fail(f"agent command exited with {process.returncode}: {detail[-1000:]}")
         try:
-            wrapper_result = json.loads(process.stdout)
+            wrapper_result = redact_value(json.loads(process.stdout), secrets)
         except json.JSONDecodeError:
             fail("agent stdout must contain exactly one JSON object")
         if not isinstance(wrapper_result, dict):

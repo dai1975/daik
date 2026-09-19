@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -43,12 +44,15 @@ class WorkspaceTests(unittest.TestCase):
     def run_daik(
         self, *arguments: str, expected_returncode: int = 0
     ) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment["DAIK_GH_TOKEN"] = "test-token"
         result = subprocess.run(
             [sys.executable, str(DAIK), *arguments],
             cwd=self.root,
             text=True,
             capture_output=True,
             check=False,
+            env=environment,
         )
         self.assertEqual(
             result.returncode,

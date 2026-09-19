@@ -38,12 +38,7 @@ workspace:
 # This produces `workspaces/<issue>/backend/` and
 # `workspaces/<issue>/frontend/`. Non-repository resources remain at their
 # original site paths and should be described in AGENTS.md's Site guide.
-<<DAIK:EDIT>>
 repositories:
-  backend:
-    path: worktree-base/backend
-    base: main
-<</DAIK:EDIT>>
 
 # Coding-agent concurrency, turn, and retry limits.
 agent:
@@ -64,11 +59,6 @@ agent:
   # daik.cli-wrapper-result.v1 JSON object to stdout:
   # command:
   #   - daik-cli-wrapper-example
-  <<DAIK:EDIT>>
-  cli_wrapper: codex
-  or
-  command:
-  <</DAIK:EDIT>>
 
 # How frequently the broker checks for eligible issues, in milliseconds.
 polling:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import os
 from pathlib import Path
 import subprocess
 import time
@@ -16,6 +15,7 @@ from daiklib.invocations import (
     write_private_json,
     write_private_text,
 )
+from daiklib.processes import ProcessConfigError, broker_environment, redact
 from daiklib.workspaces import event, safe_slug
 
 
@@ -107,16 +107,18 @@ class ProgramRunner:
         stderr = ""
         exit_code: int | None = None
         diagnostic: str | None = None
+        process_name: str | None = None
+        secrets: tuple[str, ...] = ()
         try:
             directory = self._working_directory(issue, repository)
-            environment = dict(os.environ)
-            environment.update(
+            process_name, environment, secrets = broker_environment(
+                self.config,
                 {
                     "DAIK_ISSUE": issue,
                     "DAIK_STATE": state_name,
                     "DAIK_INVOCATION_ID": invocation_id,
                     "DAIK_LOG_DIRECTORY": str(log_directory),
-                }
+                },
             )
             process = subprocess.run(
                 command,
@@ -143,8 +145,14 @@ class ProgramRunner:
         except ProgramRunnerError as error:
             result = "error"
             diagnostic = str(error)
+        except ProcessConfigError as error:
+            result = "error"
+            diagnostic = str(error)
 
         duration_ms = round((time.monotonic() - start) * 1000)
+        stdout = redact(stdout, secrets)
+        stderr = redact(stderr, secrets)
+        diagnostic = redact(diagnostic, secrets) if diagnostic else diagnostic
         write_private_text(log_directory / "program.stdout.log", stdout)
         write_private_text(log_directory / "program.stderr.log", stderr)
         write_private_json(
@@ -158,6 +166,7 @@ class ProgramRunner:
                 "executable": command[0],
                 "repository": repository,
                 "duration_ms": duration_ms,
+                **({"process": process_name} if process_name else {}),
                 **({"error": diagnostic} if diagnostic else {}),
             },
         )

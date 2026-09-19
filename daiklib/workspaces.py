@@ -10,23 +10,29 @@ import re
 import subprocess
 from typing import Any, Sequence
 
+from daiklib.processes import ProcessConfigError, broker_environment, redact
+
 
 class WorkspaceError(RuntimeError):
     pass
 
 
-def run_git(arguments: Sequence[str], repository: Path) -> str:
+def run_git(
+    arguments: Sequence[str], repository: Path, environment: dict[str, str] | None = None,
+    secrets: tuple[str, ...] = (),
+) -> str:
     result = subprocess.run(
         ["git", "-C", str(repository), *arguments],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        env=environment,
     )
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "git command failed"
-        raise WorkspaceError(detail)
-    return result.stdout.strip()
+        raise WorkspaceError(redact(detail, secrets))
+    return redact(result.stdout.strip(), secrets)
 
 
 def safe_slug(value: str) -> str:
@@ -50,6 +56,10 @@ def event(kind: str, issue: str, data: dict[str, Any]) -> dict[str, Any]:
 class WorkspaceManager:
     def __init__(self, site: Path, config: dict[str, Any]):
         self.site = site.resolve()
+        try:
+            self.process_name, self.environment, self.secrets = broker_environment(config)
+        except ProcessConfigError as error:
+            raise WorkspaceError(str(error)) from error
         workspace = config.get("workspace")
         if not isinstance(workspace, dict):
             raise WorkspaceError("workspace configuration must be a mapping")
@@ -65,6 +75,9 @@ class WorkspaceManager:
         if not isinstance(repositories, dict) or not repositories:
             raise WorkspaceError("no repositories are configured")
         self.repositories = repositories
+
+    def _git(self, arguments: Sequence[str], repository: Path) -> str:
+        return run_git(arguments, repository, self.environment, self.secrets)
 
     def _site_path(self, relative_name: str) -> Path:
         relative = Path(relative_name)
@@ -101,13 +114,13 @@ class WorkspaceManager:
             source = self._site_path(source_name)
             if not source.is_dir():
                 raise WorkspaceError(f"repository directory is missing: {source_name}")
-            run_git(("rev-parse", "--git-dir"), source)
+            self._git(("rev-parse", "--git-dir"), source)
             result.append((name, source, base))
         return result
 
     def _record(self, name: str, source: Path, worktree: Path, base_revision: str) -> dict[str, str]:
-        branch = run_git(("branch", "--show-current"), worktree)
-        head = run_git(("rev-parse", "HEAD"), worktree)
+        branch = self._git(("branch", "--show-current"), worktree)
+        head = self._git(("rev-parse", "HEAD"), worktree)
         return {
             "name": name,
             "source": source.relative_to(self.site).as_posix(),
@@ -126,11 +139,11 @@ class WorkspaceManager:
         for name, source, base in repositories:
             branch = f"{self.branch_prefix}/{workspace_id}"
             target = workspace / name
-            base_revision = run_git(("rev-parse", base), source)
+            base_revision = self._git(("rev-parse", base), source)
             if target.exists():
                 if not target.is_dir():
                     raise WorkspaceError(f"worktree target is not a directory: {target}")
-                actual_branch = run_git(("branch", "--show-current"), target)
+                actual_branch = self._git(("branch", "--show-current"), target)
                 if actual_branch != branch:
                     raise WorkspaceError(
                         f"existing worktree {target} uses {actual_branch!r}, expected {branch!r}"
@@ -140,6 +153,7 @@ class WorkspaceManager:
             branch_exists = subprocess.run(
                 ["git", "-C", str(source), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
                 check=False,
+                env=self.environment,
             ).returncode == 0
             preflight.append((name, source, branch, base_revision, target, not branch_exists))
 
@@ -152,7 +166,7 @@ class WorkspaceManager:
                     arguments.extend(("-b", branch, str(target), base_revision))
                 else:
                     arguments.extend((str(target), branch))
-                run_git(arguments, source)
+                self._git(arguments, source)
                 any_created = True
             records.append(self._record(name, source, target, base_revision))
         return event(
@@ -173,7 +187,7 @@ class WorkspaceManager:
             target = workspace / name
             if not target.is_dir():
                 raise WorkspaceError(f"worktree is missing: {target.relative_to(self.site)}")
-            records.append(self._record(name, source, target, run_git(("rev-parse", base), source)))
+            records.append(self._record(name, source, target, self._git(("rev-parse", base), source)))
         return event(
             "workspace.inspected",
             issue,
@@ -244,7 +258,7 @@ class WorkspaceManager:
             target = workspace / name
             if not target.exists():
                 continue
-            branch = run_git(("branch", "--show-current"), target)
+            branch = self._git(("branch", "--show-current"), target)
             removed.append(
                 {
                     "name": name,
@@ -253,7 +267,7 @@ class WorkspaceManager:
                 }
             )
             if wet_run:
-                run_git(("worktree", "remove", str(target)), source)
+                self._git(("worktree", "remove", str(target)), source)
         if wet_run and workspace.is_dir() and not any(workspace.iterdir()):
             workspace.rmdir()
         return event(
