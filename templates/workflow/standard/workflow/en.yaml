@@ -35,7 +35,7 @@ states:
     max_visits: 3
     task: |
       Read the issue and latest workspace and handoff events. Implement the
-      requested change and its tests in the assigned worktree.
+      requested change and its tests in the assigned checkout.
     transitions:
       ready_for_testing:
         to: testing

@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from daiklib.workspaces import WorkspaceError, canonical_remote_url, run_git, safe_slug
 
 
 DAIK = Path(__file__).resolve().parents[1] / "daik"
@@ -27,6 +30,10 @@ class WorkspaceTests(unittest.TestCase):
         self.run_command("git", "-C", str(repository), "add", "README.md")
         self.run_command("git", "-C", str(repository), "commit", "-m", "initial")
         self.run_command("git", "-C", str(repository), "branch", "-M", "main")
+        self.run_command(
+            "git", "-C", str(repository), "remote", "add", "upstream",
+            "https://example.test/backend.git",
+        )
         config = self.root / ".daik/config.yaml"
         content = config.read_text(encoding="utf-8")
         content = content.replace(
@@ -42,17 +49,22 @@ class WorkspaceTests(unittest.TestCase):
         return result
 
     def run_daik(
-        self, *arguments: str, expected_returncode: int = 0
+        self,
+        *arguments: str,
+        expected_returncode: int = 0,
+        environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        environment = dict(os.environ)
-        environment["DAIK_GH_TOKEN"] = "test-token"
+        command_environment = dict(os.environ)
+        if environment:
+            command_environment.update(environment)
+        command_environment["DAIK_GH_TOKEN"] = "test-token"
         result = subprocess.run(
             [sys.executable, str(DAIK), *arguments],
             cwd=self.root,
             text=True,
             capture_output=True,
             check=False,
-            env=environment,
+            env=command_environment,
         )
         self.assertEqual(
             result.returncode,
@@ -61,15 +73,240 @@ class WorkspaceTests(unittest.TestCase):
         )
         return result
 
+    def test_clone_remote_name_ignores_ambient_default(self) -> None:
+        home = self.root / "home"
+        home.mkdir()
+        (home / ".gitconfig").write_text(
+            "[clone]\n\tdefaultRemoteName = local\n",
+            encoding="utf-8",
+        )
+
+        created = json.loads(
+            self.run_daik(
+                "work",
+                "workspace",
+                "create",
+                "backend#custom-clone-remote",
+                environment={"HOME": str(home)},
+            ).stdout
+        )
+
+        record = created["data"]["repositories"][0]
+        self.assertEqual(record["remote"], "upstream")
+        self.assertEqual(record["remote_url"], "https://example.test/backend.git")
+
+    def test_remote_credentials_and_parameters_are_removed_from_clone_and_event(self) -> None:
+        source = self.root / "backend"
+        credential = "unregistered-user:unregistered-token"
+        remote_url = f"https://{credential}@example.test/backend.git?access=private#fragment"
+        self.run_command(
+            "git", "-C", str(source), "remote", "set-url", "upstream", remote_url
+        )
+
+        result = self.run_daik("work", "workspace", "create", "backend#credential")
+        created = json.loads(result.stdout)
+        record = created["data"]["repositories"][0]
+        clone = self.root / record["path"]
+
+        actual = self.run_command(
+            "git", "-C", str(clone), "remote", "get-url", "upstream"
+        ).stdout.strip()
+        self.assertEqual(actual, "https://example.test/backend.git")
+        self.assertEqual(record["remote_url"], "https://example.test/backend.git")
+        self.assertNotIn(credential, result.stdout)
+        self.assertNotIn("access=private", result.stdout)
+
+    def test_configured_secret_is_removed_from_persisted_remote(self) -> None:
+        source = self.root / "backend"
+        remote_url = "https://test-token@example.test/backend.git"
+        self.run_command(
+            "git", "-C", str(source), "remote", "set-url", "upstream", remote_url
+        )
+
+        result = self.run_daik("work", "workspace", "create", "backend#configured-secret")
+        created = json.loads(result.stdout)
+        clone = self.root / created["data"]["repositories"][0]["path"]
+
+        actual = self.run_command(
+            "git", "-C", str(clone), "remote", "get-url", "upstream"
+        ).stdout.strip()
+        self.assertEqual(actual, "https://example.test/backend.git")
+        self.assertNotIn("test-token", result.stdout)
+        self.assertNotIn("test-token", actual)
+
+    def test_configured_secret_outside_url_credentials_is_rejected_without_leaking(self) -> None:
+        source = self.root / "backend"
+        for suffix, remote_url in (
+            ("https-path", "https://example.test/test-token/backend.git"),
+            ("scp-path", "git@example.test:test-token/backend.git"),
+        ):
+            self.run_command(
+                "git", "-C", str(source), "remote", "set-url", "upstream", remote_url
+            )
+
+            result = self.run_daik(
+                "work", "workspace", "create", f"backend#{suffix}", expected_returncode=2
+            )
+
+            self.assertIn("contains configured authentication material", result.stderr)
+            self.assertNotIn("test-token", result.stdout)
+            self.assertNotIn("test-token", result.stderr)
+            self.assertFalse((self.root / "workspaces" / safe_slug(f"backend#{suffix}")).exists())
+
+    def test_reconcile_event_defensively_redacts_configured_secrets(self) -> None:
+        issue = "backend#redacted-event"
+        created = json.loads(self.run_daik("work", "workspace", "create", issue).stdout)
+        created["data"]["repositories"][0]["remote_url"] = (
+            "https://example.test/test-token/backend.git"
+        )
+        event_path = self.root / "credential-bearing-event.json"
+        event_path.write_text(json.dumps(created), encoding="utf-8")
+
+        result = self.run_daik(
+            "work", "workspace", "reconcile", issue, "--event", str(event_path),
+            expected_returncode=1,
+        )
+
+        self.assertNotIn("test-token", result.stdout)
+        self.assertNotIn("test-token", result.stderr)
+        self.assertIn("[REDACTED]", result.stdout)
+
+    def test_reuse_compares_canonical_remote_identity(self) -> None:
+        source = self.root / "backend"
+        self.run_command(
+            "git", "-C", str(source), "remote", "set-url", "upstream",
+            "https://first-token@example.test/backend.git?private=one#old",
+        )
+        self.run_daik("work", "workspace", "create", "backend#canonical-reuse")
+        self.run_command(
+            "git", "-C", str(source), "remote", "set-url", "upstream",
+            "https://second-token@example.test/backend.git?private=two#new",
+        )
+        reused = json.loads(
+            self.run_daik("work", "workspace", "create", "backend#canonical-reuse").stdout
+        )
+        self.assertEqual(reused["kind"], "workspace.reused")
+
+    def test_remote_url_canonicalization_and_rejection(self) -> None:
+        self.assertEqual(
+            canonical_remote_url("https://user:pass@example.test/repo.git?q=token#secret"),
+            "https://example.test/repo.git",
+        )
+        self.assertEqual(
+            canonical_remote_url("ssh://git@example.test/repo.git?ignored=yes#fragment"),
+            "ssh://git@example.test/repo.git",
+        )
+        self.assertEqual(canonical_remote_url("git@example.test:repo.git"), "git@example.test:repo.git")
+        with self.assertRaisesRegex(WorkspaceError, "cannot be safely canonicalized"):
+            canonical_remote_url("ssh://git:password@example.test/repo.git")
+        try:
+            canonical_remote_url("ssh://unregistered:secret@example.test/repo.git")
+        except WorkspaceError as error:
+            self.assertNotIn("unregistered", str(error))
+            self.assertNotIn("secret", str(error))
+
+    def test_credential_free_https_and_ssh_remotes_are_persisted(self) -> None:
+        source = self.root / "backend"
+        for suffix, remote_url in (
+            ("https", "https://example.test/backend.git"),
+            ("ssh", "git@example.test:backend.git"),
+        ):
+            self.run_command(
+                "git", "-C", str(source), "remote", "set-url", "upstream", remote_url
+            )
+            created = json.loads(
+                self.run_daik("work", "workspace", "create", f"backend#{suffix}").stdout
+            )
+            clone = self.root / created["data"]["repositories"][0]["path"]
+            actual = self.run_command(
+                "git", "-C", str(clone), "remote", "get-url", "upstream"
+            ).stdout.strip()
+            self.assertEqual(actual, remote_url)
+
+    def test_multiple_repositories_are_cloned_independently(self) -> None:
+        frontend = self.root / "frontend"
+        self.run_command("git", "clone", "--no-hardlinks", str(self.root / "backend"), str(frontend))
+        self.run_command("git", "-C", str(frontend), "remote", "rename", "origin", "upstream")
+        self.run_command(
+            "git", "-C", str(frontend), "remote", "set-url", "upstream",
+            "git@example.test:frontend.git",
+        )
+        config = self.root / ".daik/config.yaml"
+        content = config.read_text(encoding="utf-8")
+        content = content.replace(
+            "  backend:\n    path: backend\n    base: main\n",
+            "  backend:\n    path: backend\n    base: main\n"
+            "  frontend:\n    path: frontend\n    base: main\n",
+        )
+        config.write_text(content, encoding="utf-8")
+
+        created = json.loads(self.run_daik("work", "workspace", "create", "backend#multi").stdout)
+        records = {record["name"]: record for record in created["data"]["repositories"]}
+        self.assertEqual(set(records), {"backend", "frontend"})
+        for record in records.values():
+            clone = self.root / record["path"]
+            self.assertTrue((clone / ".git").is_dir())
+            self.assertFalse((clone / ".git" / "objects" / "info" / "alternates").exists())
+
+    def test_gh_token_authenticates_git_without_persisting_credentials(self) -> None:
+        bin_directory = self.root / "bin"
+        bin_directory.mkdir()
+        gh = bin_directory / "gh"
+        gh.write_text(
+            "#!/bin/sh\n"
+            "test \"$1 $2\" = \"auth git-credential\" || exit 2\n"
+            "while IFS= read -r line && test -n \"$line\"; do :; done\n"
+            "printf 'username=x-access-token\\npassword=%s\\n' \"$GH_TOKEN\"\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        environment = dict(os.environ)
+        environment["PATH"] = f"{bin_directory}{os.pathsep}{environment['PATH']}"
+        environment["GH_TOKEN"] = "credential-helper-token"
+        output = run_git(
+            ("credential", "fill"),
+            self.root / "backend",
+            environment,
+            ("credential-helper-token",),
+            redact_stdout=False,
+            input_text="protocol=https\nhost=github.com\n\n",
+        )
+        self.assertIn("password=credential-helper-token", output)
+        config = (self.root / "backend" / ".git" / "config").read_text(encoding="utf-8")
+        self.assertNotIn("credential-helper-token", config)
+        self.assertNotIn("credential.https://github.com.helper", config)
+
+    def test_gh_token_preserves_non_github_credential_helper(self) -> None:
+        repository = self.root / "backend"
+        self.run_command(
+            "git", "-C", str(repository), "config", "credential.helper", "broker-helper"
+        )
+        environment = dict(os.environ)
+        environment["GH_TOKEN"] = "credential-helper-token"
+
+        output = run_git(
+            (
+                "config", "--get-urlmatch", "credential.helper",
+                "https://gitlab.example/repository.git",
+            ),
+            repository,
+            environment,
+            ("credential-helper-token",),
+        )
+
+        self.assertEqual(output, "broker-helper")
+
     def test_workspace_lifecycle_emits_events_without_runtime_metadata(self) -> None:
         created = json.loads(self.run_daik("work", "workspace", "create", "backend#123").stdout)
 
         self.assertEqual(created["schema"], "daik.issue-event.v1")
         self.assertEqual(created["kind"], "workspace.prepared")
         record = created["data"]["repositories"][0]
-        worktree = self.root / record["worktree"]
-        self.assertTrue(worktree.is_dir())
+        clone = self.root / record["path"]
+        self.assertTrue((clone / ".git").is_dir())
         self.assertEqual(record["branch"], f"daik/{created['data']['workspace_id']}")
+        self.assertEqual(record["remote"], "upstream")
+        self.assertEqual(record["remote_url"], "https://example.test/backend.git")
         self.assertFalse(any(path.name.endswith("workspace.json") for path in self.root.rglob("*")))
 
         reused = json.loads(self.run_daik("work", "workspace", "create", "backend#123").stdout)
@@ -92,17 +329,133 @@ class WorkspaceTests(unittest.TestCase):
 
         preview = json.loads(self.run_daik("work", "workspace", "remove", "backend#123").stdout)
         self.assertEqual(preview["kind"], "workspace.remove-preview")
-        self.assertTrue(worktree.exists())
+        self.assertTrue(clone.exists())
 
         removed = json.loads(
             self.run_daik("work", "workspace", "remove", "backend#123", "--wet-run").stdout
         )
         self.assertEqual(removed["kind"], "workspace.removed")
-        self.assertFalse(worktree.exists())
-        branch = self.run_command(
-            "git", "-C", str(self.root / "backend"), "branch", "--list", record["branch"]
+        self.assertFalse(clone.exists())
+        self.assertTrue((self.root / "backend" / ".git").is_dir())
+
+    def test_clone_is_independent_and_excludes_working_tree_changes(self) -> None:
+        source = self.root / "backend"
+        (source / "README.md").write_text("dirty\n", encoding="utf-8")
+        (source / "untracked.txt").write_text("private\n", encoding="utf-8")
+
+        created = json.loads(self.run_daik("work", "workspace", "create", "backend#456").stdout)
+        clone = self.root / created["data"]["repositories"][0]["path"]
+
+        self.assertEqual((clone / "README.md").read_text(encoding="utf-8"), "backend\n")
+        self.assertFalse((clone / "untracked.txt").exists())
+        head = created["data"]["repositories"][0]["head"]
+        source_object = source / ".git" / "objects" / head[:2] / head[2:]
+        clone_object = clone / ".git" / "objects" / head[:2] / head[2:]
+        self.assertTrue(source_object.is_file())
+        self.assertTrue(clone_object.is_file())
+        self.assertNotEqual(source_object.stat().st_ino, clone_object.stat().st_ino)
+        (clone / "clone.txt").write_text("writable\n", encoding="utf-8")
+        self.run_command("git", "-C", str(clone), "add", "clone.txt")
+        self.run_command("git", "-C", str(clone), "commit", "-m", "clone commit")
+
+    def test_source_remote_rules_are_diagnostic(self) -> None:
+        source = self.root / "backend"
+        self.run_command("git", "-C", str(source), "remote", "remove", "upstream")
+        result = self.run_daik(
+            "work", "workspace", "create", "backend#remote", expected_returncode=2
         )
-        self.assertIn(record["branch"], branch.stdout)
+        self.assertIn("must have exactly one remote; found 0", result.stderr)
+
+        self.run_command(
+            "git", "-C", str(source), "remote", "add", "origin",
+            "https://example.test/backend.git",
+        )
+        self.run_command(
+            "git", "-C", str(source), "remote", "add", "mirror",
+            "https://example.test/mirror.git",
+        )
+        result = self.run_daik(
+            "work", "workspace", "create", "backend#remotes", expected_returncode=2
+        )
+        self.assertIn("must have exactly one remote; found 2", result.stderr)
+
+        self.run_command("git", "-C", str(source), "remote", "remove", "mirror")
+        self.run_command(
+            "git", "-C", str(source), "remote", "set-url", "--push", "origin",
+            "ssh://git@example.test/backend.git",
+        )
+        result = self.run_daik(
+            "work", "workspace", "create", "backend#push-url", expected_returncode=2
+        )
+        self.assertIn("different fetch and push URLs", result.stderr)
+
+    def test_reuse_rejects_non_clone_and_changed_remote(self) -> None:
+        created = json.loads(self.run_daik("work", "workspace", "create", "backend#reuse").stdout)
+        clone = self.root / created["data"]["repositories"][0]["path"]
+        self.run_command(
+            "git", "-C", str(clone), "remote", "set-url", "upstream",
+            "https://example.test/other.git",
+        )
+        result = self.run_daik(
+            "work", "workspace", "create", "backend#reuse", expected_returncode=2
+        )
+        self.assertIn("remote is", result.stderr)
+
+        shutil.rmtree(clone / ".git")
+        (clone / ".git").write_text("gitdir: /tmp/shared\n", encoding="utf-8")
+        result = self.run_daik(
+            "work", "workspace", "show", "backend#reuse", expected_returncode=2
+        )
+        self.assertIn("no independent .git directory", result.stderr)
+
+    def test_lifecycle_rejects_external_git_metadata_and_object_storage(self) -> None:
+        issue = "backend#linked-metadata"
+        created = json.loads(self.run_daik("work", "workspace", "create", issue).stdout)
+        clone = self.root / created["data"]["repositories"][0]["path"]
+        external_git = self.root / "external-git"
+        (clone / ".git").rename(external_git)
+        (clone / ".git").symlink_to(external_git, target_is_directory=True)
+
+        commands = (("create", issue), ("show", issue), ("remove", issue, "--wet-run"))
+        for command in commands:
+            result = self.run_daik("work", "workspace", *command, expected_returncode=2)
+            self.assertIn("no independent .git directory", result.stderr)
+        self.assertTrue(external_git.is_dir())
+
+        (clone / ".git").unlink()
+        external_git.rename(clone / ".git")
+        alternates = clone / ".git" / "objects" / "info" / "alternates"
+        alternates.write_text(str(self.root / "backend" / ".git" / "objects") + "\n")
+        result = self.run_daik(
+            "work", "workspace", "show", issue, expected_returncode=2
+        )
+        self.assertIn("uses Git object alternates", result.stderr)
+
+    def test_lifecycle_rejects_repository_and_workspace_symlink_escape(self) -> None:
+        issue = "backend#linked-repository"
+        created = json.loads(self.run_daik("work", "workspace", "create", issue).stdout)
+        clone = self.root / created["data"]["repositories"][0]["path"]
+        workspace = clone.parent
+        external_clone = self.root / "external-clone"
+        clone.rename(external_clone)
+        clone.symlink_to(external_clone, target_is_directory=True)
+
+        commands = (("create", issue), ("show", issue), ("remove", issue, "--wet-run"))
+        for command in commands:
+            result = self.run_daik("work", "workspace", *command, expected_returncode=2)
+            self.assertIn("escapes its Issue workspace", result.stderr)
+        self.assertTrue((external_clone / ".git").is_dir())
+
+        clone.unlink()
+        workspace.rmdir()
+        external_workspace = self.root / "external-workspace"
+        external_workspace.mkdir()
+        (external_workspace / "backend").symlink_to(external_clone, target_is_directory=True)
+        workspace.symlink_to(external_workspace, target_is_directory=True)
+        for command in commands:
+            result = self.run_daik("work", "workspace", *command, expected_returncode=2)
+            self.assertIn("escapes its Issue workspace", result.stderr)
+        self.assertTrue((external_clone / ".git").is_dir())
 
     def test_handoff_event_is_structured(self) -> None:
         result = self.run_daik(
