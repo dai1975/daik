@@ -78,7 +78,7 @@ requires a non-empty `command` argv sequence, a configured `repository`, a posit
 `error`. Program transitions contain only `to`; they do not use natural-language
 selectors.
 
-The command runs in that repository's worktree for the current Issue. Exit status zero
+The command runs in that repository's clone for the current Issue. Exit status zero
 selects `succeeded`; another normal exit selects `failed`. Start failure, timeout, or
 an invalid working directory selects `error`. Full stdout and stderr remain in the
 external Invocation log directory. Issue events contain only bounded diagnostics.

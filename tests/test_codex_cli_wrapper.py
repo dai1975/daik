@@ -50,7 +50,7 @@ result = {
     "evidence": ["tests added"],
     "summary": "implemented the issue",
     "commits": ["abc123"],
-    "validation": ["pytest=passed"],
+    "validation": ["All pytest tests passed"],
     "decisions": [],
     "risks": [],
     "next_actions": ["run independent tests"],

@@ -14,17 +14,35 @@ daik_document:
 # Parent directory for per-issue workspaces, relative to the site root.
 workspace:
   root: workspaces
-  # Prefix used for issue worktree branches.
+  # Repository materialization strategy. Only independent clones are supported.
+  strategy: clone
+  # Prefix used for issue branches.
   branch_prefix: daik
-  # Worktrees are removed only by an explicit wet-run command.
+  # Clones are removed only by an explicit wet-run command.
   cleanup: manual
 
-# Source Git repositories available for issue workspaces. Add one mapping per
-# repository; paths are relative to the site root. Example:
+# Source Git repositories used to create per-Issue clones. `path` points to
+# an existing source checkout and is relative to the site root; do not point it
+# into `workspaces/`. The mapping key becomes the directory name inside each
+# generated Issue workspace. `base` is the source revision (usually a branch)
+# from which daik creates the Issue branch; it is not that generated branch.
+# Remote URLs are persisted in credential-free canonical form. A broker GH_TOKEN
+# is exposed to GitHub HTTPS Git operations through ephemeral `gh auth
+# git-credential` command configuration; Git does not consume GH_TOKEN itself.
+#
+# For a site containing `backend/`, `frontend/`, `resources/`, and `ref/`, only
+# the Git repositories that need writable Issue checkouts are listed:
 # repositories:
 #   backend:
-#     path: backend
+#     path: source-checkouts/backend
 #     base: main
+#   frontend:
+#     path: source-checkouts/frontend
+#     base: main
+#
+# This produces `workspaces/<issue>/backend/` and
+# `workspaces/<issue>/frontend/`. Non-repository resources remain at their
+# original site paths and should be described in AGENTS.md's Site guide.
 repositories:
 
 # Coding-agent concurrency, turn, and retry limits.
@@ -35,11 +53,20 @@ agent:
   max_retry_backoff_ms: 300000
   # Maximum wall time for one workflow state invocation.
   timeout_seconds: 3600
+  #
   # Enable the built-in Codex CLI wrapper before using `daik work agent run`:
-  # cli_wrapper: codex
   # Product-specific options are passed only to that wrapper:
+  #
+  # cli_wrapper: codex
   # wrapper_options:
   #   sandbox: workspace-write
+  #   arguments:
+  #     - -c
+  #     - sandbox_workspace_write.network_access=true
+  #     - -c
+  #     - features.network_proxy.enabled=true
+  #     - -c
+  #     - 'features.network_proxy.domains={ "api.github.com" = "allow" }'
   #
   # A third-party CLI wrapper can instead be configured as argv. It reads a
   # daik.agent-invocation.v1 JSON object from stdin and writes one

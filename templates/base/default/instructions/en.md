@@ -10,7 +10,7 @@ daik:
 
 Do not copy this entire file into `AGENTS.md`. Copy only the section enclosed by
 `DAIK:COPY:BEGIN` and `DAIK:COPY:END`, then replace
-`<<DAIK:WORKSPACE_GUIDE>>` with the actual guidance or a link to it.
+`<<DAIK:SITE_GUIDE>>` with the actual guidance or a link to it.
 
 ## Section to copy into AGENTS.md
 
@@ -19,13 +19,11 @@ Do not copy this entire file into `AGENTS.md`. Copy only the section enclosed by
 
 For work assigned through an issue tracker, follow the process defined in
 `.agents/daik-workflow.yaml`. Its format and portable operations are defined in
-`.agents/daik-workflow-spec.md`, and daik runtime settings are stored in
-`.agents/daik-config.yaml`. Runtime issue events are defined in
+`.agents/daik-workflow-spec.md`. Runtime issue events are defined in
 `.agents/daik-issue-event-spec.md`. Follow `.agents/daik-tracker.md` for concrete issue
 tracker operations, and follow `.agents/daik-worker.md` for worker permissions and
 responsibilities. The CLI wrapper protocol is defined in
-`.agents/daik-agent-context-spec.md`; the tracker joint boundary is defined in
-`.agents/daik-tracker-joint-spec.md`. Writable checkouts for individual issues are
+`.agents/daik-agent-context-spec.md`. Writable checkouts for individual issues are
 created under `workspaces/`.
 
 `.daik/` is an internal management area for daik and human operators. Do not
@@ -33,18 +31,34 @@ read or modify it during normal issue investigation, implementation, testing,
 or review. Access it only when explicitly asked to set up, configure, or update
 daik itself.
 
-### Workspace guide
+### Site guide
 
-<<DAIK:WORKSPACE_GUIDE>>
+<<DAIK:SITE_GUIDE>>
 <!-- DAIK:COPY:END -->
 
 ## Guidance the user must provide
 
-Replace `<<DAIK:WORKSPACE_GUIDE>>` with this information or links to documents
+Replace `<<DAIK:SITE_GUIDE>>` with this information or links to documents
 that provide it:
 
-- repositories in the workspace and their roles
+- source repositories in the site and their roles
 - locations of reference material, generated files, and other resources
-- distinction between regular checkouts and checkouts under `workspaces/`
+- distinction between source checkouts in the site and generated Issue
+  checkouts under `workspaces/`
 - writable and read-only areas for agents
 - project-specific entry points for build, test, and review
+
+ex:
+
+```
+### Workspace guide
+
+Per-issue checkouts are created under `workspaces/` according to the site
+configuration.
+
+- `daik`: The daik codebase. This is the target for implementation and testing.
+- `.agents/`: Site configuration and workflow instructions. Treat this directory
+  as read-only during normal Issue work.
+
+Limit all edits to the assigned checkout within the Issue workspace.
+```

@@ -126,7 +126,7 @@ daik work status
 - `site init`: 展開内容をpreviewする。`--wet-run`指定時だけ実際に書き込む
 - `site validate`: 外部サービスへ接続せず、site内の契約を検証する
 - `site doctor`: 契約を検証し、local toolと実行環境を診断する
-- `work workspace`: IssueごとのGit worktreeを作成・確認・照合・削除する
+- `work workspace`: Issueごとの独立Git cloneを作成・確認・照合・削除する
 - `work handoff create`: 次のagent role向けのstructured eventを生成する
 - `work agent run`: 単一のagent stateを実行し、遷移とhandoff eventを生成する
 - `work run`: claimした単一Issueをbrokerで停止またはfinal stateまで進行する
@@ -135,6 +135,10 @@ daik work status
 
 `AGENTS.md`のblockをcopyして変更し、生成ファイルを確認した後、次のコマンドで
 siteを検証します。
+
+既存siteでは、`site init --wet-run`を再実行してdaik所有のtemplateを再生成し、
+tagged blockを改めてcopy、調整してください。ユーザー所有のルート`AGENTS.md`は
+このcommandでは上書きされません。
 
 ```sh
 ./daik/daik site validate
@@ -151,9 +155,21 @@ manifestとの整合性、daik所有ファイルの完全性を検査します�
 ```
 
 validateに加えて、Git、Issue用workspace外のcheckout、設定されたworkspace
-directoryへの書き込みを確認します。tracker accessにはskill、MCP server、CLI、
+directoryへの書き込みを確認します。組み込みGitHub wrapperでは、ready判定に使う
+Issue dependency fieldを提供するGitHub CLI 2.94.0以降であることも確認します。
+tracker accessにはskill、MCP server、CLI、
 その他の方法を使えるため、tracker互換性については選択packのread-onlyな
 互換性確認skillを案内します。
+
+### process実行環境
+
+`.daik/config.yaml`のtop-level `processes`で、brokerとworkflowの全roleを
+それぞれちょうど一つのprocessへ割り当てます。childへ渡すのは`PATH`、`HOME`、
+locale、temporary directoryなどの最小baselineと、そのprocess自身の`env` mapping
+だけです。`from_env`は親環境変数を別名で公開し、`value`は非secretな固定値を指定し、
+`required: true`は対象processの起動直前に未設定・空を検出します。元の変数名や別の
+process設定は暗黙に継承・mergeしません。既存siteは一つの`type: broker`と、重複も
+不足もない`type: agent`のrole割り当てを追加してください。
 
 helpは次のように表示できます。
 
@@ -163,9 +179,14 @@ helpは次のように表示できます。
 ./daik/daik work workspace --help
 ```
 
-workspaceを作る前に`.agents/daik-config.yaml`へsource repositoryを設定します。
+workspaceを作る前に`.daik/config.yaml`へsource repositoryを設定します。
 
 ```yaml
+workspace:
+  root: workspaces
+  strategy: clone
+  branch_prefix: daik
+  cleanup: manual
 repositories:
   backend:
     path: backend
@@ -175,7 +196,19 @@ repositories:
     base: main
 ```
 
-設定されたrepositoryごとにworktreeを作成または再利用します。
+設定されたrepositoryごとに独立cloneを作成または再利用します。sourceにはfetch URLと
+push URLが同一のremoteがちょうど一つ必要です。daikはlocal sourceを
+`--no-hardlinks`でcloneするため未push commitもbaseにでき、Issue branchを`base`から
+作成した後、clone時のlocal remoteをsource remoteのcredential-freeな正規形へ
+置き換えます。URLのuserinfoとquery/fragment parameterはcloneにもworkspace eventにも
+保存しません。SSH remoteも利用できます。
+
+`GH_TOKEN`を直接利用するのは`gh`であり、Gitが自動的に利用するわけではありません。
+brokerが親processのsecretを`GH_TOKEN`へmappingした場合、daikはGitHub HTTPS commandへ
+一時的な`gh auth git-credential` helperをGit command-line設定で渡します。helperは
+broker process環境からtokenを読みます。helper設定もtokenもcloneの`.git/config`へは
+書き込みません。他hostや認証方式にはcredential-free remote（SSHなど）とbrokerが
+管理するGit/SSH環境設定を使用してください。
 
 ```sh
 ./daik/daik work workspace create github:backend#123
@@ -194,12 +227,12 @@ roleの境界では次のagent向けhandoff eventを生成します。
   --to review \
   --phase review \
   --summary "Implementation and tests completed" \
-  --validation "pytest=passed" \
+  --validation "pytestは全件成功" \
   --next-action "Review retry boundaries"
 ```
 
-`workspace remove`はdefaultでpreviewだけを行い、worktreeの削除には`--wet-run`が
-必要です。Issue branchは削除しません。
+`workspace remove`はdefaultでpreviewだけを行い、cloneの削除には`--wet-run`が
+必要です。source repositoryと別Issue workspaceは変更しません。
 
 組み込みCodex CLI wrapperを有効にします。共通daik Invocationを非対話の
 `codex exec`へ変換し、Codex固有の動作をrunnerから分離します。
@@ -219,7 +252,7 @@ workflowのagent stateを一つだけ実行します。
 ```
 
 site rootでcommandを実行し、newline-delimitedの`agent.started`、
-`agent.completed`、`handoff` eventを出力します。tracker jointはこれらのevent全体を
+`agent.completed`、`handoff` eventを出力します。tracker wrapperはこれらのevent全体を
 Issueへ追記します。agentまたはprotocolの失敗時は`agent.failed`を出力します。
 InvocationとCLI wrapperの契約は`.agents/daik-agent-context-spec.md`を参照してください。
 Invocation記録はsite外の`DAIK_STATE_HOME`、`$XDG_STATE_HOME/daik`、
@@ -236,15 +269,17 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-brokerを実行する前に、実行可能なtracker jointを設定します。jointはdaikの
-control operationを選択trackerへmappingし、`.agents/daik-tracker-joint-spec.md`の
-stdio契約を実装します。
+GitHub Issues packは組み込みの`github-gh` tracker wrapperを有効にします。
+認証済みの`gh` accountを使い、`repositories`に設定した各source checkoutから
+GitHub repositoryを解決します。
 
 ```yaml
 tracker:
-  joint:
-    - daik-joint-github-issues
+  wrapper: github-gh
 ```
+
+brokerを起動する前に`gh auth status`を実行してください。custom tracker wrapperは
+`.daik/tracker-wrapper-spec.md`を実装するargv listとして設定できます。
 
 単一Issueをclaimして処理します。
 
@@ -328,16 +363,16 @@ my-site/
 ├── .agents/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
-│   ├── daik-config.yaml
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   ├── daik-agent-context-spec.md
-│   └── daik-tracker-joint-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
+│   ├── config.yaml
 │   ├── daik-AGENTS.md.template
+│   ├── tracker-wrapper-spec.md
 │   └── manifest.json
 └── workspaces/
 ```
@@ -349,7 +384,7 @@ site全体の説明と恒久的な開発ルールを記述します。
 `AGENTS.md`は常にユーザー所有です。daikは作成、変更、上書きを行いません。
 代わりに、追加を推奨する内容を`.daik/daik-AGENTS.md.template`として用意します。
 template内の`DAIK:COPY:BEGIN`と`DAIK:COPY:END`で囲まれた部分だけを既存の
-`AGENTS.md`へコピーし、`<<DAIK:WORKSPACE_GUIDE>>`をsite固有の説明に
+`AGENTS.md`へコピーし、`<<DAIK:SITE_GUIDE>>`をsite固有の説明に
 置き換えます。template自身の説明とユーザーへの記述ガイドはコピー範囲の外に
 置かれます。
 
@@ -391,8 +426,8 @@ workspaces/
 └── GH-124/
 ```
 
-各Issue workspaceの内部構造はdaikが固定しません。単一のGit worktreeだけを
-作ることも、複数リポジトリのworktreeを並べることもできます。agentのcurrent
+各Issue workspaceには、設定されたrepositoryごとの独立Git cloneを配置します。
+Git metadataとobjectもIssue workspace内に収まります。agentのcurrent
 working directoryはsiteのルートですが、実際の変更は割り当てられた
 `workspaces/<issue>/`内のcheckoutに対して行います。
 
@@ -413,11 +448,11 @@ eventを読んでから作業を継続します。
 | `.agents/daik-workflow.yaml` | Workflow | User | 作業手順を確認・編集する |
 | `.agents/daik-tracker.md` | Tracker guide | User | 操作mappingとplaceholderを確認・編集する |
 | `.agents/daik-worker.md` | Worker policy | User | workerの権限と責務を確認・編集する |
-| `.agents/daik-config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
+| `.daik/config.yaml` | Runtime config | User | trackerと実行設定を確認・編集する |
 | `.agents/daik-workflow-spec.md` | Reference | daik | 通常は参照のみ |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | 通常は参照のみ |
 | `.agents/daik-agent-context-spec.md` | Invocation・CLI wrapper contract | daik | 通常は参照のみ |
-| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | 通常は参照のみ |
+| `.daik/tracker-wrapper-spec.md` | Tracker wrapper contract | daik | 通常は参照のみ |
 | `.daik/manifest.json` | Operation record | daik | 開発時には使用しない |
 
 生成文書自身にも同じ区別を示します。Markdownはfront matterの`daik` mapping、
@@ -438,7 +473,7 @@ daikは[OpenAI Symphony](https://github.com/openai/symphony)の、Issue tracker�
 Issue tracker
       │
       ▼
-Tracker joint
+Tracker wrapper
       │ normalized Issue
       ▼
 Agent Work Broker
@@ -450,7 +485,7 @@ Agent Work Broker
               └── coding agent
 ```
 
-Symphonyが定義するscheduler、tracker joint、workspace manager、agent runnerの
+Symphonyが定義するscheduler、tracker wrapper、workspace manager、agent runnerの
 責務分離を参考にしつつ、daikでは個人のsiteに展開して直接編集できる設定と
 workflowを重視します。
 

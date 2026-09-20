@@ -5,7 +5,7 @@ daik:
   ownership: daik
   user_action: reference
   tracker_pack: daik.tracker.github-issues
-  contract_revision: 1
+  contract_revision: 2
   reference_api_version: "2026-03-10"
 ---
 
@@ -65,3 +65,22 @@ the other three reasons. Preserve the human summary in a close comment.
 
 Do not infer compatibility from API version alone. Do not mutate a live
 repository merely to perform a check.
+
+## Built-in `gh` wrapper
+
+The `github-gh` tracker wrapper uses the authenticated GitHub CLI account. It
+resolves every configured source checkout with `gh repo view`, selects work with
+`gh issue list`, and stores control events in append-only Issue comments. Dynamic
+`daik:*` labels are created when first needed.
+
+The wrapper requires GitHub CLI 2.94.0 or newer. That release added the Issue 2.0
+dependency fields and commands used to read `blockedBy` and manage blocked-by and
+blocking relationships. `daik site doctor` reports an error for an older or
+unparseable `gh` version. Relationships require GitHub.com or GitHub Enterprise
+Server 3.19 or newer; the compatibility skill verifies the server separately.
+
+The wrapper checks the event-derived control version immediately before writing and
+rejects an Issue assigned to a different actor. GitHub does not provide one atomic
+compare-and-set operation spanning comments, labels, assignees, and Issue state, so
+only one broker using the same GitHub account should control a site at a time. Event
+comments remain authoritative if a later mirror update fails.

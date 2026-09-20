@@ -51,7 +51,8 @@ The standard workflow's higher-level actions are compositions:
 
 Append every `daik.issue-event.v1` object produced by daik as an issue comment.
 Put `<!-- daik:issue-event:v1 -->` immediately before a fenced `json` block
-containing the complete object. Never edit or replace earlier event comments.
+containing the complete object. One broker commit may append several marker and
+block pairs in one comment. Never edit or replace earlier event comments.
 Labels and assignees mirror current state for queries; event comments remain the
 authoritative handoff and workspace history. Before starting work, read the
 latest workspace event and latest `handoff` event.

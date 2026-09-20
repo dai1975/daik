@@ -5,11 +5,11 @@ import time
 import unittest
 
 from daiklib.broker import BrokerConflict, BrokerError
-from daiklib.joints import JointError
+from daiklib.tracker_wrapper import TrackerWrapperError
 from daiklib.watch import WorkWatcher
 
 
-class FakeJoint:
+class FakeTrackerWrapper:
     def __init__(self, issues: list[str], failures: int = 0):
         self.issues = issues
         self.failures = failures
@@ -18,7 +18,7 @@ class FakeJoint:
     def list_ready(self, limit: int, exclude=()) -> list[str]:
         self.calls += 1
         if self.calls <= self.failures:
-            raise JointError("temporary tracker failure")
+            raise TrackerWrapperError("temporary tracker failure")
         return [issue for issue in self.issues if issue not in exclude][:limit]
 
 
@@ -62,10 +62,10 @@ class RetryingBroker:
 
 
 class WorkWatcherTests(unittest.TestCase):
-    def watcher(self, factory, joint, emitted, sleeps, concurrency=1, retries=2):
+    def watcher(self, factory, wrapper, emitted, sleeps, concurrency=1, retries=2):
         return WorkWatcher(
             factory,
-            joint,
+            wrapper,
             concurrency=concurrency,
             interval_ms=1,
             max_retries=retries,
@@ -77,13 +77,13 @@ class WorkWatcherTests(unittest.TestCase):
 
     def test_once_runs_ready_work_concurrently(self) -> None:
         factory = BrokerFactory()
-        joint = FakeJoint(["issue-1", "issue-2"])
+        wrapper = FakeTrackerWrapper(["issue-1", "issue-2"])
         emitted = []
 
-        result = self.watcher(factory, joint, emitted, [], concurrency=2).run(once=True)
+        result = self.watcher(factory, wrapper, emitted, [], concurrency=2).run(once=True)
 
         self.assertEqual(result, 0)
-        self.assertEqual(joint.calls, 1)
+        self.assertEqual(wrapper.calls, 1)
         self.assertEqual(factory.max_active, 2)
         self.assertEqual(
             [item["data"]["issue"] for item in emitted if item["kind"] == "work.submitted"],
@@ -95,7 +95,7 @@ class WorkWatcherTests(unittest.TestCase):
         sleeps = []
         emitted = []
 
-        result = self.watcher(lambda: broker, FakeJoint(["issue-1"]), emitted, sleeps).run(
+        result = self.watcher(lambda: broker, FakeTrackerWrapper(["issue-1"]), emitted, sleeps).run(
             once=True
         )
 
@@ -110,7 +110,7 @@ class WorkWatcherTests(unittest.TestCase):
         broker = RetryingBroker(failures=0, conflict=True)
         emitted = []
 
-        result = self.watcher(lambda: broker, FakeJoint(["issue-1"]), emitted, []).run(
+        result = self.watcher(lambda: broker, FakeTrackerWrapper(["issue-1"]), emitted, []).run(
             once=True
         )
 
@@ -123,7 +123,7 @@ class WorkWatcherTests(unittest.TestCase):
         emitted = []
 
         result = self.watcher(
-            lambda: broker, FakeJoint(["issue-1"]), emitted, [], retries=1
+            lambda: broker, FakeTrackerWrapper(["issue-1"]), emitted, [], retries=1
         ).run(once=True)
 
         self.assertEqual(result, 1)
@@ -134,12 +134,12 @@ class WorkWatcherTests(unittest.TestCase):
     def test_retries_polling_before_a_successful_cycle(self) -> None:
         sleeps = []
         emitted = []
-        joint = FakeJoint([], failures=1)
+        wrapper = FakeTrackerWrapper([], failures=1)
 
-        result = self.watcher(BrokerFactory(), joint, emitted, sleeps).run(once=True)
+        result = self.watcher(BrokerFactory(), wrapper, emitted, sleeps).run(once=True)
 
         self.assertEqual(result, 0)
-        self.assertEqual(joint.calls, 2)
+        self.assertEqual(wrapper.calls, 2)
         self.assertEqual(sleeps, [0.01])
         self.assertIn("poll.retrying", [item["kind"] for item in emitted])
 

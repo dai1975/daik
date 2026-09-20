@@ -56,9 +56,9 @@ A session artifact has `type: session`, a product-native `id`, and an absolute l
 reference and may create a fixed-name symbolic link in its Invocation log directory.
 The native path and link are never tracker data.
 
-Tracker access is a separate semantic boundary implemented by a joint. Its protocol
-is defined in `.agents/daik-tracker-joint-spec.md`; a CLI wrapper must not implement
-broker control updates.
+Tracker access is a separate semantic boundary implemented by a tracker wrapper. Its
+protocol is defined for daik operators in `.daik/tracker-wrapper-spec.md`; an agent CLI
+wrapper must not implement broker control updates.
 
 ## Codex CLI wrapper
 

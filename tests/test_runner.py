@@ -36,6 +36,7 @@ class RunnerTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment["DAIK_STATE_HOME"] = str(self.root / "daik-state")
+        environment["DAIK_GH_TOKEN"] = "test-token"
         result = subprocess.run(
             [sys.executable, str(DAIK), *arguments],
             cwd=self.root,
@@ -74,7 +75,7 @@ print(json.dumps({
         "evidence": ["adapter completed"],
         "summary": "implementation completed",
         "commits": ["abc123"],
-        "validation": ["tests=passed"],
+        "validation": ["All relevant tests passed locally"],
         "decisions": [],
         "risks": [],
         "next_actions": ["run independent tests"],
@@ -93,7 +94,7 @@ runpy.run_path("adapter.py", run_name="__main__")
 """ % json.dumps(transition),
             encoding="utf-8",
         )
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "  timeout_seconds: 3600\n",
@@ -120,6 +121,9 @@ runpy.run_path("adapter.py", run_name="__main__")
         self.assertEqual(events[1]["data"]["transition"], "ready_for_testing")
         self.assertEqual(events[1]["data"]["to"], "testing")
         self.assertEqual(events[2]["data"]["to_role"], "testing")
+        self.assertEqual(
+            events[2]["data"]["validation"], ["All relevant tests passed locally"]
+        )
         invocation = json.loads(
             (self.root / "received-invocation.json").read_text(encoding="utf-8")
         )
@@ -163,6 +167,71 @@ runpy.run_path("adapter.py", run_name="__main__")
         )
 
         self.assertIn("workflow state is not an agent state", result.stderr)
+
+    def test_secret_output_is_redacted_from_logs_result_and_events(self) -> None:
+        self.configure_adapter("ready_for_testing")
+        adapter = self.root / "adapter.py"
+        adapter.write_text(
+            """\
+import json
+import os
+import sys
+secret = os.environ["GH_TOKEN"]
+print(secret, file=sys.stderr)
+print(json.dumps({
+    "protocol_version": "daik.cli-wrapper-result.v1",
+    "wrapper": {"name": "test", "diagnostic": secret},
+    "native_artifacts": [],
+    "agent_result": {
+        "transition": "ready_for_testing",
+        "reason": secret,
+        "evidence": [secret],
+        "summary": secret,
+        "commits": [], "validation": [], "decisions": [], "risks": [],
+        "next_actions": [],
+    },
+}))
+""",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik(
+            "work", "agent", "run", "github:backend#123", "--state", "implementation"
+        )
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        invocation = next((self.root / "daik-state").rglob("invocation.json"))
+        log_directory = invocation.parent
+        persisted = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in log_directory.iterdir()
+            if path.is_file()
+        )
+        self.assertNotIn("test-token", persisted)
+        self.assertNotIn("test-token", str(events))
+        self.assertIn("[REDACTED]", persisted)
+
+    def test_secret_failure_diagnostic_is_redacted(self) -> None:
+        self.configure_adapter("ready_for_testing")
+        (self.root / "adapter.py").write_text(
+            "import os, sys\nprint(os.environ['GH_TOKEN'], file=sys.stderr)\n"
+            "raise SystemExit(9)\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik(
+            "work", "agent", "run", "github:backend#123", "--state", "implementation",
+            expected_returncode=1,
+        )
+        self.assertNotIn("test-token", result.stdout)
+        self.assertNotIn("test-token", result.stderr)
+        invocation = next((self.root / "daik-state").rglob("invocation.json"))
+        persisted = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in invocation.parent.iterdir()
+            if path.is_file()
+        )
+        self.assertNotIn("test-token", persisted)
+        self.assertIn("[REDACTED]", persisted)
 
 
 if __name__ == "__main__":

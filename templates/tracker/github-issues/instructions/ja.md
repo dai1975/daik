@@ -47,6 +47,7 @@ daik close reasonは`completed`、`duplicate`、`superseded`、`cancelled`とす
 
 daikが生成した`daik.issue-event.v1` objectは全てIssue commentとして追記する。
 完全なobjectを含む`json` code blockの直前へ`<!-- daik:issue-event:v1 -->`を置く。
+brokerの一回のcommitでは、複数のmarkerとblockの組を一つのcommentへ追記してよい。
 以前のevent commentは編集・置換しない。検索用にlabelとassigneeへ現在状態をmirror
 するが、handoffとworkspace履歴の正本はevent commentとする。作業開始前に最新の
 workspace eventと最新の`handoff` eventを読む。

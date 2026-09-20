@@ -11,7 +11,7 @@ the user in `.agents/daik-tracker.md`.
 
 ## Procedure
 
-1. Confirm that `.agents/daik-config.yaml` selects
+1. Confirm that `.daik/config.yaml` selects
    `daik.tracker.github-issues`.
 2. Read `.daik/github-issues-spec.md`. This explicit user request authorizes
    reading that otherwise-internal file; do not inspect unrelated `.daik/`
@@ -21,6 +21,8 @@ the user in `.agents/daik-tracker.md`.
 4. Determine the GitHub product and API version exposed by that access method.
    If unavailable, record it as `UNKNOWN`; do not substitute a local `gh`
    executable unless the tracker instructions select it.
+   When `.daik/config.yaml` selects the built-in `github-gh` wrapper, verify that
+   GitHub CLI is version 2.94.0 or newer.
 5. Verify each required data field, repository feature, and permission from the
    compatibility spec. Prefer capability, repository configuration, label,
    dependency, and existing-issue reads.

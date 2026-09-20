@@ -136,7 +136,7 @@ daik work status
 - `site init`: preview deployment; write files only when `--wet-run` is supplied
 - `site validate`: validate the local site contract without accessing external services
 - `site doctor`: validate the contract and diagnose local tools and runtime readiness
-- `work workspace`: create, inspect, reconcile, and remove per-issue Git worktrees
+- `work workspace`: create, inspect, reconcile, and remove per-issue Git clones
 - `work handoff create`: emit a structured event for the next agent role
 - `work agent run`: invoke one agent state and emit transition and handoff events
 - `work run`: run the broker for one claimed Issue until it stops or reaches a final state
@@ -145,6 +145,10 @@ daik work status
 
 After copying and customizing the `AGENTS.md` block and reviewing the generated
 files, validate the site with:
+
+For an existing site, rerun `site init --wet-run` to regenerate the daik-owned
+template, then copy and customize its tagged block again. The command does not
+overwrite the user-owned root `AGENTS.md`.
 
 ```sh
 ./daik/daik site validate
@@ -163,9 +167,22 @@ For broader environment diagnostics, run:
 
 In addition to validation, doctor checks Git, discovers checkouts outside the
 per-issue workspace area, and verifies that the configured workspace directory
-is writable. For tracker compatibility it points to the selected pack's
+is writable. For the built-in GitHub wrapper it also requires GitHub CLI 2.94.0
+or newer, which provides the Issue dependency fields used by ready selection.
+For broader tracker compatibility it points to the selected pack's
 read-only compatibility skill, because tracker access may use a skill, MCP
 server, CLI, or another method.
+
+### Process environments
+
+`.daik/config.yaml` assigns the broker and every workflow role to exactly one
+top-level `processes` entry. A process receives a small baseline environment
+(`PATH`, `HOME`, locale, and temporary-directory variables) plus only its own
+`env` mappings. Use `from_env` to alias a parent variable or `value` for a
+non-secret literal; `required: true` fails immediately before that process is
+started. Parent variable names and settings from other processes are not
+implicitly inherited or merged. Existing sites must add one `type: broker`
+entry and complete, non-overlapping `type: agent` role assignments.
 
 Display help with:
 
@@ -175,10 +192,15 @@ Display help with:
 ./daik/daik work workspace --help
 ```
 
-Configure source repositories in `.agents/daik-config.yaml` before creating a
+Configure source repositories in `.daik/config.yaml` before creating a
 workspace:
 
 ```yaml
+workspace:
+  root: workspaces
+  strategy: clone
+  branch_prefix: daik
+  cleanup: manual
 repositories:
   backend:
     path: backend
@@ -188,7 +210,21 @@ repositories:
     base: main
 ```
 
-Create or reuse one worktree per configured repository:
+Create or reuse one independent clone per configured repository. The source must
+have exactly one remote, with identical fetch and push URLs. daik clones the local
+source with `--no-hardlinks` (so local-only commits remain usable), creates the Issue
+branch at `base`, and replaces the clone's temporary local remote with a canonical,
+credential-free form of the original remote URL. URL userinfo and query/fragment
+parameters are never copied into the clone or workspace events. SSH remotes are also
+supported.
+
+`GH_TOKEN` is consumed by `gh`; Git does not use it automatically. When the broker
+maps a parent secret to `GH_TOKEN`, daik gives GitHub HTTPS commands an ephemeral
+`gh auth git-credential` helper through command-line Git configuration. The helper
+reads the token from the broker process environment. Neither the helper setting nor
+the token is written to the clone's `.git/config`. Other hosts and authentication
+methods should be configured through a credential-free remote (for example SSH) and
+broker-controlled Git/SSH environment configuration.
 
 ```sh
 ./daik/daik work workspace create github:backend#123
@@ -207,12 +243,12 @@ At a role boundary, generate a handoff event for the next agent:
   --to review \
   --phase review \
   --summary "Implementation and tests completed" \
-  --validation "pytest=passed" \
+  --validation "All pytest tests passed" \
   --next-action "Review retry boundaries"
 ```
 
-`workspace remove` previews by default and requires `--wet-run` to remove
-worktrees. It never deletes issue branches.
+`workspace remove` previews by default and requires `--wet-run` to remove clones.
+It does not modify the source repository or other Issue workspaces.
 
 Enable the built-in Codex CLI wrapper. It translates the common daik Invocation to
 non-interactive `codex exec` without putting Codex-specific behavior in the runner:
@@ -232,7 +268,7 @@ Run exactly one workflow agent state:
 ```
 
 The command runs from the site root and prints newline-delimited `agent.started`,
-`agent.completed`, and `handoff` events. A tracker joint must append these complete
+`agent.completed`, and `handoff` events. A tracker wrapper must append these complete
 events to the issue. Agent or protocol failure instead emits `agent.failed`. See
 `.agents/daik-agent-context-spec.md` for the Invocation and CLI wrapper contracts.
 Invocation records are stored outside the site under `DAIK_STATE_HOME`,
@@ -249,15 +285,17 @@ sites/<site-id>/
     └── events.ndjson
 ```
 
-Configure an executable tracker joint before running the broker. The joint maps
-daik control operations to the selected tracker and implements the stdio contract in
-`.agents/daik-tracker-joint-spec.md`:
+The GitHub Issues pack enables the built-in `github-gh` tracker wrapper. It uses the
+authenticated `gh` account and resolves the GitHub repository from each source
+checkout configured under `repositories`:
 
 ```yaml
 tracker:
-  joint:
-    - daik-joint-github-issues
+  wrapper: github-gh
 ```
+
+Run `gh auth status` before starting the broker. Custom tracker wrappers can instead
+be configured as an argv list implementing `.daik/tracker-wrapper-spec.md`.
 
 Then claim and process one Issue:
 
@@ -271,7 +309,7 @@ declared edge with `--transition NAME`.
 
 A workflow can run deterministic validation without an LLM by using a `program`
 state. The command is an argv sequence and runs directly in the named repository's
-Issue worktree:
+Issue repository clone:
 
 ```yaml
 testing:
@@ -345,16 +383,16 @@ my-site/
 ├── .agents/
 │   ├── daik-workflow.yaml
 │   ├── daik-tracker.md
-│   ├── daik-config.yaml
 │   ├── daik-worker.md
 │   ├── daik-workflow-spec.md
 │   ├── daik-issue-event-spec.md
-│   ├── daik-agent-context-spec.md
-│   └── daik-tracker-joint-spec.md
+│   └── daik-agent-context-spec.md
 ├── .daik/
 │   ├── .ignore
 │   ├── AGENTS.md
+│   ├── config.yaml
 │   ├── daik-AGENTS.md.template
+│   ├── tracker-wrapper-spec.md
 │   └── manifest.json
 └── workspaces/
 ```
@@ -367,7 +405,7 @@ This file describes the entire site and its permanent development rules.
 Instead, daik writes suggested additions to
 `.daik/daik-AGENTS.md.template`. Copy only the section enclosed by
 `DAIK:COPY:BEGIN` and `DAIK:COPY:END` into the existing `AGENTS.md`, then
-replace `<<DAIK:WORKSPACE_GUIDE>>` with site-specific guidance. Explanations of
+replace `<<DAIK:SITE_GUIDE>>` with site-specific guidance. Explanations of
 the template itself and instructions for the user remain outside the copy block.
 
 #### `.agents/daik-workflow.yaml`
@@ -409,8 +447,8 @@ workspaces/
 └── GH-124/
 ```
 
-daik does not fix the internal layout of an issue workspace. It may contain one
-Git worktree or worktrees from multiple repositories. The agent's current
+An issue workspace contains one independent Git clone per configured repository.
+The clone's Git metadata and objects are inside that Issue workspace. The agent's current
 working directory remains the site root, while actual changes are made in the
 assigned checkout under `workspaces/<issue>/`.
 
@@ -431,11 +469,11 @@ do not destroy user changes.
 | `.agents/daik-workflow.yaml` | Workflow | User | Review and customize the process |
 | `.agents/daik-tracker.md` | Tracker guide | User | Review the operation mapping and placeholder |
 | `.agents/daik-worker.md` | Worker policy | User | Review worker permissions and responsibilities |
-| `.agents/daik-config.yaml` | Runtime config | User | Review tracker and execution settings |
+| `.daik/config.yaml` | Runtime config | User | Review tracker and execution settings |
 | `.agents/daik-workflow-spec.md` | Reference | daik | Normally read-only |
 | `.agents/daik-issue-event-spec.md` | Issue event contract | daik | Normally read-only |
 | `.agents/daik-agent-context-spec.md` | Invocation and CLI wrapper contract | daik | Normally read-only |
-| `.agents/daik-tracker-joint-spec.md` | Tracker joint contract | daik | Normally read-only |
+| `.daik/tracker-wrapper-spec.md` | Tracker wrapper contract | daik | Normally read-only |
 | `.daik/manifest.json` | Operation record | daik | Not used during development |
 
 Generated documents also identify these roles themselves. Markdown files record
@@ -456,7 +494,7 @@ which monitors an issue tracker and runs coding agents in per-issue workspaces.
 Issue tracker
       │
       ▼
-Tracker joint
+Tracker wrapper
       │ normalized Issue
       ▼
 Agent Work Broker
@@ -468,7 +506,7 @@ Agent Work Broker
               └── coding agent
 ```
 
-It follows Symphony's separation of scheduler, tracker joint, workspace
+It follows Symphony's separation of scheduler, tracker wrapper, workspace
 manager, and agent runner responsibilities, while emphasizing configuration
 and workflows that are deployed into and directly editable within a personal
 site.

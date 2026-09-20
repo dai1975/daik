@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from daiklib.joints import ControlConflict, JointError, TrackerJoint
+from daiklib.tracker_wrapper import ControlConflict, TrackerWrapperError, TrackerWrapper
 from daiklib.program import ProgramRunner, ProgramRunnerError
 from daiklib.runner import AgentExecutionError, AgentRunner, RunnerError
 from daiklib.workspaces import WorkspaceError, WorkspaceManager, event
@@ -94,12 +94,12 @@ class Broker:
         site: Path,
         config: dict[str, Any],
         workflow: dict[str, Any],
-        joint: TrackerJoint,
+        wrapper: TrackerWrapper,
     ):
         self.site = site
         self.config = config
         self.workflow = workflow
-        self.joint = joint
+        self.wrapper = wrapper
         self.states = workflow["states"]
         self.initial = workflow["initial"]
         self.max_transitions = workflow["limits"]["max_transitions"]
@@ -113,12 +113,12 @@ class Broker:
         **control: Any,
     ) -> str:
         try:
-            return self.joint.commit(issue, version, events, **control)
+            return self.wrapper.commit(issue, version, events, **control)
         except ControlConflict as error:
             raise BrokerConflict(
                 "tracker control changed concurrently; reload the Issue before retrying"
             ) from error
-        except JointError as error:
+        except TrackerWrapperError as error:
             raise BrokerError(str(error)) from error
 
     def _transition_event(
@@ -142,8 +142,8 @@ class Broker:
         human_transition: str | None = None,
     ) -> str:
         try:
-            snapshot = self.joint.read(issue)
-        except JointError as error:
+            snapshot = self.wrapper.read(issue)
+        except TrackerWrapperError as error:
             raise BrokerError(str(error)) from error
         version = snapshot["control_version"]
         history = snapshot["events"]

@@ -71,7 +71,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_invalid_positive_integer_is_an_error(self) -> None:
         self.complete_user_setup()
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "max_concurrent_agents: 1", "max_concurrent_agents: 0"
@@ -82,6 +82,46 @@ class ValidateTests(unittest.TestCase):
         result = self.run_daik("site", "validate", expected_returncode=1)
 
         self.assertIn("agent.max_concurrent_agents must be a positive integer", result.stdout)
+
+    def test_process_roles_must_exactly_cover_workflow_roles(self) -> None:
+        self.complete_user_setup()
+        config = self.root / ".daik/config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8")
+            .replace("      - review\n", "")
+            .replace("      - testing\n", "      - testing\n      - reviewer\n"),
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            'workflow role "review" is not assigned to any agent process', result.stdout
+        )
+        self.assertIn(
+            'contains unknown workflow role "reviewer"; known roles: implementation, review, testing',
+            result.stdout,
+        )
+
+    def test_process_role_duplicate_names_all_owners(self) -> None:
+        self.complete_user_setup()
+        config = self.root / ".daik/config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8")
+            + "\n  test-agent:\n"
+            + "    type: agent\n"
+            + "    roles:\n"
+            + "      - testing\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_daik("site", "validate", expected_returncode=1)
+
+        self.assertIn(
+            'workflow role "testing" is assigned to multiple processes: '
+            "processes.agent, processes.test-agent",
+            result.stdout,
+        )
 
     def test_tracker_must_provide_every_workflow_action(self) -> None:
         self.complete_user_setup()
@@ -146,7 +186,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_workflow_accepts_deterministic_program_state(self) -> None:
         self.complete_user_setup()
-        config = self.root / ".agents/daik-config.yaml"
+        config = self.root / ".daik/config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
                 "repositories:\n",
@@ -255,6 +295,42 @@ class ValidateTests(unittest.TestCase):
 
         self.assertIn("ERROR git: executable was not found on PATH", result.stdout)
         self.assertIn("Doctor failed:", result.stdout)
+
+    def test_doctor_rejects_gh_without_issue_dependency_support(self) -> None:
+        self.complete_user_setup()
+        binary_directory = self.root / "bin"
+        binary_directory.mkdir()
+        gh = binary_directory / "gh"
+        gh.write_text("#!/bin/sh\necho 'gh version 2.93.0 (test)'\n", encoding="utf-8")
+        gh.chmod(0o755)
+        environment = dict(os.environ)
+        environment["PATH"] = str(binary_directory) + os.pathsep + environment["PATH"]
+
+        result = self.run_daik(
+            "site", "doctor", expected_returncode=1, environment=environment
+        )
+
+        self.assertIn(
+            "ERROR tracker: github-gh requires gh >= 2.94.0 for Issue dependencies; found 2.93.0",
+            result.stdout,
+        )
+
+    def test_doctor_accepts_minimum_github_gh_version(self) -> None:
+        self.complete_user_setup()
+        binary_directory = self.root / "bin"
+        binary_directory.mkdir()
+        gh = binary_directory / "gh"
+        gh.write_text("#!/bin/sh\necho 'gh version 2.94.0 (test)'\n", encoding="utf-8")
+        gh.chmod(0o755)
+        environment = dict(os.environ)
+        environment["PATH"] = str(binary_directory) + os.pathsep + environment["PATH"]
+
+        result = self.run_daik("site", "doctor", environment=environment)
+
+        self.assertIn(
+            "INFO tracker: built-in GitHub gh tracker wrapper is configured (gh 2.94.0)",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":

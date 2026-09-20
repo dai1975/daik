@@ -26,11 +26,11 @@ Tracker packs define the provider-specific container used for the event.
 
 ## Event kinds
 
-- `workspace.prepared`: worktrees were created
-- `workspace.reused`: existing worktrees were verified and reused
+- `workspace.prepared`: repository clones were created
+- `workspace.reused`: existing repository clones were verified and reused
 - `workspace.inspected`: local workspace state was read
 - `workspace.reconciled`: local state matched a previously recorded event
-- `workspace.removed`: worktrees were removed; branches were retained
+- `workspace.removed`: repository clones were removed
 - `handoff`: one agent role handed work to another
 - `workflow.started`: the Issue was claimed and entered its initial state
 - `workflow.transitioned`: an allowed transition was atomically applied
@@ -51,7 +51,7 @@ the selected `transition`, target state in `to`, natural-language `reason`, and 
 `evidence` list. The runner emits a `handoff` event after a successful invocation.
 
 `agent.failed` records the state, profile, role, and a bounded diagnostic `error`.
-Runner events are output records for the tracker joint to append; emitting an event
+Runner events are output records for the tracker wrapper to append; emitting an event
 does not itself persist it.
 
 ## Program-run data
@@ -68,18 +68,19 @@ and stderr are retained only in the external Invocation log directory.
 `workflow.awaiting_human` records `state` and `prompt`. `workflow.finished` records
 `state` and `outcome`.
 
-The tracker joint commits these events with an opaque compare-and-set control version.
+The tracker wrapper commits these events with an opaque compare-and-set control version.
 Only committed control events determine the current workflow state.
 
 ## Workspace data
 
 Workspace paths are site-relative. Each repository entry records `name`,
-`source`, `worktree`, `branch`, `head`, and `base_revision`. Absolute local paths
+`source`, `path`, `branch`, `head`, `base_revision`, `remote`, and `remote_url`. Absolute local paths
 must not be posted to the tracker.
 
 ## Handoff data
 
 A handoff records `from_role`, `to_role`, `phase`, `summary`, `commits`,
-`validation`, `decisions`, `risks`, and `next_actions`. Empty lists are retained
-so the receiving agent can distinguish an intentionally empty section from an
-older unstructured comment.
+`validation`, `decisions`, `risks`, and `next_actions`. `validation` is a list of
+concise evidence strings; it may contain commands and results or natural-language
+observations. Empty lists are retained so the receiving agent can distinguish an
+intentionally empty section from an older unstructured comment.

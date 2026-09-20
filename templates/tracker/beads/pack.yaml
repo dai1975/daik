@@ -11,7 +11,7 @@ name:
 languages:
   - ja
   - en
-daik_config: daik-config/tracker.yaml
+site_config: config/tracker.yaml
 provides:
   - issue.list_ready
   - issue.read
